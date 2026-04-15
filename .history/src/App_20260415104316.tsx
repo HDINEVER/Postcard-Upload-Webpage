@@ -5,41 +5,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Upload, X, CheckCircle2, ChevronRight, AlertCircle, ChevronDown } from 'lucide-react';
+import { Upload, X, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
 import gsap from 'gsap';
 import { submitEntry } from './lib/appwrite';
-
-const SCHOOL_OPTIONS = [
-  '上海震旦职业学院',
-  '上海外国语大学贤达经济人文学院',
-  '上海建桥学院',
-  '上海师范大学天华学院',
-];
-
-const FILE_RULES: Record<string, { accept: string; label: string }> = {
-  postcard: {
-    accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
-    label: '支持 JPG、PNG 图片文件',
-  },
-  presentation: {
-    accept: '.ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    label: '支持 PPT、PPTX、PDF 文档文件',
-  },
-  video: {
-    accept: '.zip,.rar,application/zip,application/x-zip-compressed,application/x-rar-compressed',
-    label: '支持 ZIP、RAR 压缩包，建议控制在 200MB 内',
-  },
-};
-
-type CategoryKey = 'postcard' | 'presentation' | 'video';
-
-type FormState = {
-  name: string;
-  phone: string;
-  school: string;
-  studentId: string;
-  category: CategoryKey;
-};
 
 const FloatingCard = ({ children, className, style, delay = 0 }: any) => {
   const floatRef = useRef<HTMLDivElement>(null);
@@ -154,136 +122,13 @@ const FloatingCards = () => {
 function SubmitModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
-  const [filesByCategory, setFilesByCategory] = useState<Record<CategoryKey, File | null>>({
-    postcard: null,
-    presentation: null,
-    video: null,
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState<FormState>({
-    name: '',
-    phone: '',
-    school: '',
-    studentId: '',
-    category: 'postcard',
-  });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const nextCategory = e.target.value as CategoryKey;
-    setFormData(prev => ({ ...prev, category: nextCategory }));
-    setFile(filesByCategory[nextCategory]);
-    setError(null);
-    setIsDragging(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const currentFileRule = FILE_RULES[formData.category] ?? FILE_RULES.postcard;
-
-  const isFileAccepted = (selectedFile: File) => {
-    const acceptedItems = currentFileRule.accept
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-
-    const fileName = selectedFile.name.toLowerCase();
-    const fileType = selectedFile.type.toLowerCase();
-
-    return acceptedItems.some((item) => {
-      if (item.startsWith('.')) {
-        return fileName.endsWith(item);
-      }
-      return fileType === item;
-    });
-  };
-
-  const assignFile = (selectedFile: File | null) => {
-    if (!selectedFile) {
-      return;
-    }
-
-    if (!isFileAccepted(selectedFile)) {
-      setFile(null);
-      setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-      setError(`当前类别文件格式不正确，${currentFileRule.label}`);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      return;
-    }
-
-    setError(null);
-    setFile(selectedFile);
-    setFilesByCategory((prev) => ({ ...prev, [formData.category]: selectedFile }));
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    assignFile(e.target.files?.[0] || null);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLButtonElement>) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    assignFile(e.dataTransfer.files?.[0] || null);
-  };
-
-  const openFilePicker = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!formData.name || !formData.phone || !formData.school || !formData.studentId || !file) {
-      setError('请填写所有必需的字段并选择文件');
-      return;
-    }
-
-    setError(null);
-    setLoading(true);
-    setUploadProgress(0);
     setStep(2);
-
-    try {
-      await submitEntry({
-        name: formData.name,
-        phone: formData.phone,
-        school: formData.school,
-        studentId: formData.studentId,
-        category: formData.category,
-        file: file,
-        onProgress: (progress) => {
-          setUploadProgress(progress);
-        },
-      });
-
-      setUploadProgress(100);
+    setTimeout(() => {
       setStep(3);
-      setLoading(false);
-    } catch (err) {
-      setLoading(false);
-      setUploadProgress(0);
-      setStep(1);
-      setError(err instanceof Error ? err.message : '提交失败，请重试');
-      console.error('Submit error:', err);
-    }
+    }, 2000);
   };
 
   return (
@@ -310,75 +155,24 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-6 overflow-y-auto custom-scrollbar">
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex gap-3"
-            >
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-red-700 text-sm font-medium">{error}</p>
-            </motion.div>
-          )}
-          
           {step === 1 && (
             <form onSubmit={handleSubmit} className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">姓名</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入真实姓名" 
-                  />
+                  <input required type="text" className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" placeholder="请输入真实姓名" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">联系电话</label>
-                  <input 
-                    required 
-                    type="tel" 
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入手机号码" 
-                  />
+                  <input required type="tel" className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" placeholder="请输入手机号码" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <div className="relative">
-                    <select
-                      required
-                      name="school"
-                      value={formData.school}
-                      onChange={handleSelectChange}
-                      className="w-full appearance-none px-4 py-3 pr-12 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white text-zinc-900"
-                    >
-                      <option value="" disabled>请选择所在学校</option>
-                      {SCHOOL_OPTIONS.map((school) => (
-                        <option key={school} value={school}>
-                          {school}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
-                  </div>
+                  <input required type="text" className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" placeholder="请输入学校全称" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="studentId"
-                    value={formData.studentId}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入学号" 
-                  />
+                  <input required type="text" className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" placeholder="请输入学号" />
                 </div>
               </div>
 
@@ -386,42 +180,21 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 <label className="text-sm font-semibold text-zinc-900">参赛类别</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <label className="relative flex cursor-pointer rounded-xl border border-zinc-200 bg-white p-4 shadow-sm focus-within:ring-2 focus-within:ring-orange-500 hover:border-orange-300 transition-colors has-[:checked]:border-orange-500 has-[:checked]:ring-1 has-[:checked]:ring-orange-500 has-[:checked]:bg-orange-50/50">
-                    <input 
-                      type="radio" 
-                      name="category" 
-                      value="postcard" 
-                      checked={formData.category === 'postcard'}
-                      onChange={handleCategoryChange}
-                      className="sr-only" 
-                    />
+                    <input type="radio" name="category" value="postcard" className="sr-only" defaultChecked />
                     <span className="flex flex-col">
                       <span className="block text-sm font-bold text-zinc-900">明信片设计</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">图片格式 (JPG/PNG)</span>
                     </span>
                   </label>
                   <label className="relative flex cursor-pointer rounded-xl border border-zinc-200 bg-white p-4 shadow-sm focus-within:ring-2 focus-within:ring-orange-500 hover:border-orange-300 transition-colors has-[:checked]:border-orange-500 has-[:checked]:ring-1 has-[:checked]:ring-orange-500 has-[:checked]:bg-orange-50/50">
-                    <input 
-                      type="radio" 
-                      name="category" 
-                      value="presentation" 
-                      checked={formData.category === 'presentation'}
-                      onChange={handleCategoryChange}
-                      className="sr-only" 
-                    />
+                    <input type="radio" name="category" value="presentation" className="sr-only" />
                     <span className="flex flex-col">
                       <span className="block text-sm font-bold text-zinc-900">演示文稿演讲</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">文档格式 (PPT/PDF)</span>
                     </span>
                   </label>
                   <label className="relative flex cursor-pointer rounded-xl border border-zinc-200 bg-white p-4 shadow-sm focus-within:ring-2 focus-within:ring-orange-500 hover:border-orange-300 transition-colors has-[:checked]:border-orange-500 has-[:checked]:ring-1 has-[:checked]:ring-orange-500 has-[:checked]:bg-orange-50/50">
-                    <input 
-                      type="radio" 
-                      name="category" 
-                      value="video" 
-                      checked={formData.category === 'video'}
-                      onChange={handleCategoryChange}
-                      className="sr-only" 
-                    />
+                    <input type="radio" name="category" value="video" className="sr-only" />
                     <span className="flex flex-col">
                       <span className="block text-sm font-bold text-zinc-900">项目上传视频</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">200MB内ZIP打包</span>
@@ -432,52 +205,19 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
-                <button
-                  type="button"
-                  onClick={openFilePicker}
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                  }}
-                  onDrop={handleDrop}
-                  className={`mt-2 flex w-full justify-center rounded-xl border-2 border-dashed px-6 py-12 transition-all relative group bg-zinc-50/50 text-left ${
-                    isDragging
-                      ? 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100'
-                      : 'border-zinc-200 hover:border-orange-400 hover:bg-orange-50/30'
-                  }`}
-                >
+                <div className="mt-2 flex justify-center rounded-xl border-2 border-dashed border-zinc-200 px-6 py-12 hover:border-orange-400 hover:bg-orange-50/30 transition-all relative group bg-zinc-50/50">
                   <div className="text-center">
                     <div className="w-16 h-16 mb-4 mx-auto bg-white rounded-full shadow-sm flex items-center justify-center border border-zinc-100 group-hover:scale-110 transition-transform">
                       <Upload className="h-8 w-8 text-zinc-400 group-hover:text-orange-500 transition-colors" aria-hidden="true" />
                     </div>
                     <div className="flex text-sm leading-6 text-zinc-600 justify-center">
-                      <span className="rounded-md font-bold text-orange-600">
-                        点击选择文件
-                      </span>
+                      <label htmlFor="file-upload" className="relative cursor-pointer rounded-md font-bold text-orange-600 hover:text-orange-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-orange-600 focus-within:ring-offset-2">
+                        <span>点击选择文件</span>
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" required onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                      </label>
                       <p className="pl-1">或拖拽至此区域</p>
                     </div>
-                    <p className="text-xs leading-5 text-zinc-400 mt-2">{currentFileRule.label}</p>
-                    <input
-                      ref={fileInputRef}
-                      id="file-upload"
-                      name="file-upload"
-                      type="file"
-                      required
-                      accept={currentFileRule.accept}
-                      className="sr-only"
-                      onChange={handleFileChange}
-                    />
+                    <p className="text-xs leading-5 text-zinc-400 mt-2">支持 ZIP, RAR, PDF, PPT, JPG (视频请打包成200MB以内的ZIP)</p>
                     {file && (
                       <motion.div 
                         initial={{ opacity: 0, y: 10 }}
@@ -485,41 +225,21 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                         className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
                       >
                         <span className="truncate max-w-[200px]">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setFile(null);
-                            setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-                            if (fileInputRef.current) {
-                              fileInputRef.current.value = '';
-                            }
-                          }}
-                          className="ml-2 text-orange-400 hover:text-orange-600"
-                        >
+                        <button type="button" onClick={(e) => { e.preventDefault(); setFile(null); }} className="ml-2 text-orange-400 hover:text-orange-600">
                           <X className="w-4 h-4" />
                         </button>
                       </motion.div>
                     )}
                   </div>
-                </button>
+                </div>
               </div>
 
               <div className="pt-6 border-t border-zinc-100 flex justify-end gap-4">
-                <button 
-                  type="button" 
-                  onClick={onClose} 
-                  disabled={loading}
-                  className="px-6 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                <button type="button" onClick={onClose} className="px-6 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 rounded-xl transition-colors">
                   取消
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-                >
-                  {loading ? '上传中...' : '确认提交'}
+                <button type="submit" className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
+                  确认提交
                 </button>
               </div>
             </form>
@@ -527,25 +247,11 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
           {step === 2 && (
             <div className="py-32 flex flex-col items-center justify-center space-y-6">
-              <div className="w-full max-w-md space-y-4">
-                <div className="flex items-center justify-between text-sm font-semibold text-zinc-600">
-                  <span>正在上传作品</span>
-                  <span>{Math.round(uploadProgress)}%</span>
-                </div>
-                <div className="h-4 overflow-hidden rounded-full bg-orange-100">
-                  <motion.div
-                    className="h-full rounded-full bg-orange-500"
-                    animate={{ width: `${Math.max(uploadProgress, 6)}%` }}
-                    transition={{ ease: 'easeOut', duration: 0.2 }}
-                  />
-                </div>
-                <p className="text-center text-lg font-bold text-zinc-700">
-                  文件上传中，请稍候...
-                </p>
-                <p className="text-center text-sm text-zinc-500">
-                  上传完成后会自动显示提交成功弹窗
-                </p>
+              <div className="relative w-20 h-20">
+                <div className="absolute inset-0 border-4 border-orange-100 rounded-full"></div>
+                <div className="absolute inset-0 border-4 border-orange-600 rounded-full border-t-transparent animate-spin"></div>
               </div>
+              <p className="text-lg font-bold text-zinc-700 animate-pulse">正在加密上传您的作品...</p>
             </div>
           )}
 
