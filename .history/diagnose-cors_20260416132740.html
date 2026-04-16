@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appwrite 连接诊断</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; margin-top: 0; }
+        h2 { color: #666; font-size: 18px; margin-top: 30px; }
+        .status { padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #f97316;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover { background: #ea580c; }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .config-item:last-child { border-bottom: none; }
+        .config-label { font-weight: 600; color: #666; }
+        .config-value { color: #333; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔍 Appwrite 连接诊断工具</h1>
+        <p>这个工具会帮助你诊断 "Failed to fetch" 错误。</p>
+        
+        <h2>📝 当前配置</h2>
+        <div id="config"></div>
+        
+        <h2>🧪 测试步骤</h2>
+        <button onclick="runDiagnostics()">开始诊断</button>
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        import { Client, Databases, Storage, Account } from 'https://cdn.jsdelivr.net/npm/appwrite@16/dist/esm/index.js';
+
+        const config = {
+            endpoint: 'https://appwrite1.hdinever.top/v1',
+            projectId: '69dc5b0700295f5740d0',
+            databaseId: '69de43e100124b512cbb',
+            collectionId: 'project',
+            buckets: {
+                video: '69df4311003df133de23',
+                ppt: '69df430100088d621422',
+                postcard: '69df42a60004a562ba07'
+            }
+        };
+
+        // 显示配置
+        const configDiv = document.getElementById('config');
+        configDiv.innerHTML = `
+            <div class="config-item">
+                <span class="config-label">服务器地址:</span>
+                <span class="config-value">${config.endpoint}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">项目 ID:</span>
+                <span class="config-value">${config.projectId}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">数据库 ID:</span>
+                <span class="config-value">${config.databaseId}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">集合 ID:</span>
+                <span class="config-value">${config.collectionId}</span>
+            </div>
+        `;
+
+        window.runDiagnostics = async function() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="info">🔄 正在诊断，请稍候...</div>';
+
+            const results = [];
+
+            // 测试 1: 服务器可达性
+            results.push('<h2>步骤 1: 测试服务器可达性</h2>');
+            try {
+                const response = await fetch(config.endpoint.replace('/v1', '') + '/health');
+                if (response.ok) {
+                    results.push('<div class="success">✅ 服务器在线，可以访问</div>');
+                } else {
+                    results.push(`<div class="error">❌ 服务器响应异常 (状态码: ${response.status})</div>`);
+                }
+            } catch (error) {
+                results.push(`<div class="error">❌ 无法连接到服务器<br>错误: ${error.message}</div>`);
+            }
+
+            // 测试 2: Appwrite 客户端初始化
+            results.push('<h2>步骤 2: 初始化 Appwrite 客户端</h2>');
+            try {
+                const client = new Client()
+                    .setEndpoint(config.endpoint)
+                    .setProject(config.projectId);
+                
+                const account = new Account(client);
+                results.push('<div class="success">✅ Appwrite 客户端初始化成功</div>');
+
+                // 测试 3: CORS 配置
+                results.push('<h2>步骤 3: 测试 CORS 配置（尝试调用 API）</h2>');
+                try {
+                    await account.get();
+                    results.push('<div class="success">✅ API 调用成功（已登录用户）</div>');
+                } catch (error) {
+                    if (error.code === 401) {
+                        results.push('<div class="success">✅ CORS 配置正确（401 未授权是正常的，说明请求已到达服务器）</div>');
+                        results.push('<div class="info">💡 提示：401 错误是正常的，因为这是一个公开的表单，不需要登录</div>');
+                    } else if (error.message.includes('fetch')) {
+                        results.push('<div class="error">❌ CORS 跨域错误！<br>错误: ' + error.message + '</div>');
+                        results.push(`
+                            <div class="warning">
+                                <strong>⚠️ 解决方案：配置 Appwrite 项目平台</strong><br><br>
+                                请按以下步骤操作：<br>
+                                1. 登录 Appwrite 控制台: <a href="https://appwrite1.hdinever.top" target="_blank">https://appwrite1.hdinever.top</a><br>
+                                2. 选择项目: <strong>${config.projectId}</strong><br>
+                                3. 进入 <strong>Settings → Platforms</strong><br>
+                                4. 点击 <strong>Add Platform → Web App</strong><br>
+                                5. 填写信息：<br>
+                                   - Name: <code>本地开发</code><br>
+                                   - Hostname: <code>localhost</code> 或 <code>*</code> (开发环境可用通配符)<br>
+                                6. 保存后再次测试
+                            </div>
+                        `);
+                    } else {
+                        results.push('<div class="error">❌ 未知错误: ' + error.message + '</div>');
+                    }
+                }
+
+                // 测试 4: 数据库权限
+                results.push('<h2>步骤 4: 测试数据库权限</h2>');
+                try {
+                    const databases = new Databases(client);
+                    await databases.listDocuments(config.databaseId, config.collectionId);
+                    results.push('<div class="success">✅ 数据库读取权限正常</div>');
+                } catch (error) {
+                    if (error.code === 401) {
+                        results.push(`
+                            <div class="error">❌ 数据库权限不足<br>错误码: ${error.code}</div>
+                            <div class="warning">
+                                <strong>⚠️ 解决方案：配置 Collection 权限</strong><br><br>
+                                1. 进入 Database → Collection: <strong>project</strong><br>
+                                2. 点击 <strong>Settings → Permissions</strong><br>
+                                3. 添加权限：<br>
+                                   - Role: <code>Any</code> (任何人)<br>
+                                   - Permissions: <code>Create</code>, <code>Read</code><br>
+                                4. 保存后再次测试
+                            </div>
+                        `);
+                    } else if (!error.message.includes('fetch')) {
+                        results.push('<div class="info">ℹ️ ' + error.message + '</div>');
+                    }
+                }
+
+                // 测试 5: Storage 权限
+                results.push('<h2>步骤 5: 测试 Storage 权限</h2>');
+                try {
+                    const storage = new Storage(client);
+                    await storage.listFiles(config.buckets.postcard);
+                    results.push('<div class="success">✅ Storage 读取权限正常</div>');
+                } catch (error) {
+                    if (error.code === 401) {
+                        results.push(`
+                            <div class="error">❌ Storage 权限不足<br>错误码: ${error.code}</div>
+                            <div class="warning">
+                                <strong>⚠️ 解决方案：配置 Bucket 权限</strong><br><br>
+                                对每个 Bucket 执行以下操作：<br>
+                                1. 进入 Storage → 选择 Bucket<br>
+                                2. 点击 <strong>Settings → Permissions</strong><br>
+                                3. 添加权限：<br>
+                                   - Role: <code>Any</code> (任何人)<br>
+                                   - Permissions: <code>Create</code>, <code>Read</code><br>
+                                4. 保存<br><br>
+                                需要配置的 Buckets:<br>
+                                - 明信片: ${config.buckets.postcard}<br>
+                                - 演示文稿: ${config.buckets.ppt}<br>
+                                - 视频: ${config.buckets.video}
+                            </div>
+                        `);
+                    } else if (!error.message.includes('fetch')) {
+                        results.push('<div class="info">ℹ️ ' + error.message + '</div>');
+                    }
+                }
+
+            } catch (error) {
+                results.push('<div class="error">❌ 初始化失败: ' + error.message + '</div>');
+            }
+
+            resultsDiv.innerHTML = results.join('');
+        };
+    </script>
+</body>
+</html>
