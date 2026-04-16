@@ -55,6 +55,8 @@ const categoryToBucketId: Record<string, string> = {
   postcard: appwriteConfig.bucketIds.postcard,
 };
 
+const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '当前页面来源';
+
 function assertAppwriteConfigured() {
   if (!isAppwriteConfigured || !databases || !storage) {
     throw new Error(
@@ -91,7 +93,7 @@ function normalizeSubmissionError(error: unknown): Error {
 
   if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
     return new Error(
-      '无法连接到 Appwrite 接口。请先检查 1) Appwrite 域名是否可直接访问 /v1/health，2) 是否被 Cloudflare Access、WAF 或登录保护拦截，3) Appwrite Platforms/CORS 是否已放行当前域名。浏览器直连 Appwrite 不需要 API Key。'
+      `无法连接到 Appwrite 上传接口。当前页面来源是 ${currentOrigin}。请优先检查 1) Appwrite Platforms/CORS 是否已放行这个来源，2) Cloudflare Access、WAF 或挑战页是否仍在拦截 /v1/storage 或 /v1/databases 请求，3) 修改配置后是否已强制刷新浏览器并重启开发服务器。浏览器直连 Appwrite 不需要 API Key。`
     );
   }
 

@@ -10,10 +10,10 @@ import gsap from 'gsap';
 import { submitEntry } from './lib/appwrite';
 
 const SCHOOL_OPTIONS = [
-  { label: '上海震旦职业学院', value: '上海震旦职业学院' },
-  { label: '上海外国语大学贤达经济人文学院', value: '上海外国语大学贤达经济人文学院' },
-  { label: '上海建桥学院', value: '上 海建桥学院' },
-  { label: '上海师范大学天华学院', value: '上海师范大学天华学院' },
+  '上海震旦职业学院',
+  '上海外国语大学贤达经济人文学院',
+  '上海建桥学院',
+  '上海师范大学天华学院',
 ];
 
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
@@ -40,8 +40,6 @@ type FormState = {
   studentId: string;
   category: CategoryKey;
 };
-
-type UploadStage = 'uploading' | 'saving';
 
 const FloatingCard = ({ children, className, style, delay = 0 }: any) => {
   const floatRef = useRef<HTMLDivElement>(null);
@@ -165,7 +163,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStage, setUploadStage] = useState<UploadStage>('uploading');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<FormState>({
     name: '',
@@ -174,35 +171,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     studentId: '',
     category: 'postcard',
   });
-
-  useEffect(() => {
-    if (!loading || step !== 2) {
-      return;
-    }
-
-    const progressCap = uploadStage === 'uploading' ? 88 : 96;
-    const timer = window.setInterval(() => {
-      setUploadProgress((current) => {
-        if (current >= progressCap) {
-          return current;
-        }
-
-        if (current < 20) {
-          return Math.min(current + 4, progressCap);
-        }
-
-        if (current < 60) {
-          return Math.min(current + 2, progressCap);
-        }
-
-        return Math.min(current + 1, progressCap);
-      });
-    }, 180);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [loading, step, uploadStage]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -290,8 +258,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
     setError(null);
     setLoading(true);
-    setUploadStage('uploading');
-    setUploadProgress(6);
+    setUploadProgress(0);
     setStep(2);
 
     try {
@@ -303,10 +270,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         category: formData.category,
         file: file,
         onProgress: (progress) => {
-          setUploadProgress((current) => Math.max(current, Math.round(progress)));
-        },
-        onStageChange: (nextStage) => {
-          setUploadStage(nextStage);
+          setUploadProgress(progress);
         },
       });
 
@@ -316,23 +280,11 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setLoading(false);
       setUploadProgress(0);
-      setUploadStage('uploading');
       setStep(1);
       setError(err instanceof Error ? err.message : '提交失败，请重试');
       console.error('Submit error:', err);
     }
   };
-
-  const progressLabel = `${Math.round(uploadProgress)}%`;
-  const progressTitle = uploadStage === 'uploading' ? '正在上传作品' : '正在保存报名信息';
-  const progressDescription =
-    uploadStage === 'uploading'
-      ? '文件上传中，请稍候...'
-      : '文件已上传，正在写入报名信息...';
-  const progressHint =
-    uploadStage === 'uploading'
-      ? '上传完成后会自动进入报名信息保存阶段'
-      : '信息保存完成后会自动显示提交成功弹窗';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -408,8 +360,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     >
                       <option value="" disabled>请选择所在学校</option>
                       {SCHOOL_OPTIONS.map((school) => (
-                        <option key={school.label} value={school.value}>
-                          {school.label}
+                        <option key={school} value={school}>
+                          {school}
                         </option>
                       ))}
                     </select>
@@ -577,8 +529,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
             <div className="py-32 flex flex-col items-center justify-center space-y-6">
               <div className="w-full max-w-md space-y-4">
                 <div className="flex items-center justify-between text-sm font-semibold text-zinc-600">
-                  <span>{progressTitle}</span>
-                  <span>{progressLabel}</span>
+                  <span>正在上传作品</span>
+                  <span>{Math.round(uploadProgress)}%</span>
                 </div>
                 <div className="h-4 overflow-hidden rounded-full bg-orange-100">
                   <motion.div
@@ -588,10 +540,10 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                   />
                 </div>
                 <p className="text-center text-lg font-bold text-zinc-700">
-                  {progressDescription}
+                  文件上传中，请稍候...
                 </p>
                 <p className="text-center text-sm text-zinc-500">
-                  {progressHint}
+                  上传完成后会自动显示提交成功弹窗
                 </p>
               </div>
             </div>

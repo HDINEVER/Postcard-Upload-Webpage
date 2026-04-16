@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Storage 权限配置指南</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .alert {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .alert h2 {
+            color: #856404;
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+        .alert p {
+            color: #856404;
+            line-height: 1.6;
+        }
+        .step {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .step h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .step-content {
+            color: #333;
+            line-height: 1.8;
+        }
+        .step-content ol {
+            margin: 15px 0;
+            padding-left: 25px;
+        }
+        .step-content li {
+            margin: 10px 0;
+        }
+        .bucket-list {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .bucket-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #f1f3f5;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .bucket-name {
+            color: #495057;
+            font-weight: bold;
+        }
+        .bucket-id {
+            color: #667eea;
+            margin-top: 5px;
+        }
+        .permission-box {
+            background: #e7f5ff;
+            border: 2px dashed #339af0;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .permission-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            color: #1864ab;
+        }
+        .permission-item::before {
+            content: "✓";
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #339af0;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 30px;
+            text-align: center;
+        }
+        .success h3 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+        .code {
+            background: #f8f9fa;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: #e83e8c;
+        }
+        .link {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        .link:hover {
+            background: #5568d3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Storage Buckets 权限配置</h1>
+        <p class="subtitle">解决 "Failed to fetch" CORS 错误的关键步骤</p>
+
+        <div class="alert">
+            <h2>⚠️ 当前问题</h2>
+            <p>虽然你已经配置了 Web 平台（localhost），但是 <strong>Storage Buckets 的权限没有配置</strong>，导致文件上传时出现 CORS 跨域错误。</p>
+        </div>
+
+        <div class="step">
+            <h3>步骤 1: 登录 Appwrite 控制台</h3>
+            <div class="step-content">
+                <p>访问你的 Appwrite 控制台：</p>
+                <a href="https://appwrite1.hdinever.top" target="_blank" class="link">
+                    🔗 打开 Appwrite 控制台
+                </a>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 2: 选择项目</h3>
+            <div class="step-content">
+                <p>找到并点击项目：<span class="code">69dc5b0700295f5740d0</span></p>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 3: 配置每个 Storage Bucket 的权限</h3>
+            <div class="step-content">
+                <p>你需要为 <strong>3 个存储桶</strong> 分别配置权限：</p>
+                
+                <div class="bucket-list">
+                    <div class="bucket-item">
+                        <div class="bucket-name">📸 明信片设计 (Postcard)</div>
+                        <div class="bucket-id">ID: 69df42a60004a562ba07</div>
+                    </div>
+                    <div class="bucket-item">
+                        <div class="bucket-name">📊 演示文稿演讲 (Presentation)</div>
+                        <div class="bucket-id">ID: 69df430100088d621422</div>
+                    </div>
+                    <div class="bucket-item">
+                        <div class="bucket-name">🎥 项目上传视频 (Video)</div>
+                        <div class="bucket-id">ID: 69df4311003df133de23</div>
+                    </div>
+                </div>
+
+                <p style="margin-top: 20px;"><strong>对每个存储桶执行以下操作：</strong></p>
+                
+                <ol>
+                    <li>在左侧菜单点击 <span class="code">Storage</span></li>
+                    <li>点击对应的存储桶（根据上面的 ID 找到它）</li>
+                    <li>点击 <span class="code">Settings</span> 标签</li>
+                    <li>点击 <span class="code">Permissions</span> 子标签</li>
+                    <li>点击 <span class="code">+ Add Role</span> 按钮</li>
+                    <li>在弹出窗口中配置：
+                        <div class="permission-box">
+                            <div class="permission-item">Role Type: 选择 <strong>Any</strong></div>
+                            <div class="permission-item">Create: <strong>勾选 ✓</strong></div>
+                            <div class="permission-item">Read: <strong>勾选 ✓</strong></div>
+                        </div>
+                    </li>
+                    <li>点击 <span class="code">Create</span> 或 <span class="code">Save</span> 保存</li>
+                    <li><strong>重复以上步骤</strong>，配置其他两个存储桶</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 4: （可选）配置 Collection 权限</h3>
+            <div class="step-content">
+                <p>如果上传时还提示权限错误，也需要配置数据库集合的权限：</p>
+                <ol>
+                    <li>在左侧菜单点击 <span class="code">Databases</span></li>
+                    <li>选择数据库 <span class="code">69de43e100124b512cbb</span></li>
+                    <li>点击 Collection <span class="code">project</span></li>
+                    <li>点击 <span class="code">Settings</span> → <span class="code">Permissions</span></li>
+                    <li>添加 Role: <span class="code">Any</span></li>
+                    <li>勾选权限：<span class="code">Create</span> 和 <span class="code">Read</span></li>
+                    <li>保存</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 5: 验证配置</h3>
+            <div class="step-content">
+                <ol>
+                    <li>配置完成后，<strong>等待 1-2 分钟</strong>让 Appwrite 配置生效</li>
+                    <li>回到浏览器，强制刷新页面（Ctrl+Shift+R 或 Cmd+Shift+R）</li>
+                    <li>再次测试上传功能</li>
+                    <li>打开浏览器控制台（F12）查看是否还有 CORS 错误</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="success">
+            <h3>✅ 配置完成后</h3>
+            <p>返回应用页面测试上传功能</p>
+            <a href="http://localhost:3000" target="_blank" class="link">
+                🚀 打开应用测试
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // 自动聚焦到 Appwrite 链接
+        window.addEventListener('load', () => {
+            console.log('%c📋 Storage Buckets 配置清单', 'font-size: 16px; font-weight: bold; color: #667eea;');
+            console.log('%c需要配置的存储桶：', 'font-weight: bold;');
+            console.log('1. 明信片: 69df42a60004a562ba07');
+            console.log('2. PPT: 69df430100088d621422');
+            console.log('3. 视频: 69df4311003df133de23');
+            console.log('%c\n每个桶都要配置 Any 角色的 Create 和 Read 权限！', 'color: #e83e8c; font-weight: bold;');
+        });
+    </script>
+</body>
+</html>

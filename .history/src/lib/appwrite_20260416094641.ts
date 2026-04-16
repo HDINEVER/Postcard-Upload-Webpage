@@ -64,31 +64,6 @@ function assertAppwriteConfigured() {
 }
 
 function normalizeSubmissionError(error: unknown): Error {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  ) {
-    const appwriteError = error as { message: string; code?: number; type?: string };
-
-    if (appwriteError.type === 'document_invalid_structure') {
-      if (appwriteError.message.includes('schoolName')) {
-        return new Error('提交失败：所选学校与 Appwrite 集合允许值不一致，请重新选择学校后再试。');
-      }
-
-      return new Error(`提交失败：${appwriteError.message}`);
-    }
-
-    if (appwriteError.code === 404 && appwriteError.type === 'general_route_not_found') {
-      return new Error('提交失败：Appwrite 文档接口未找到，请检查 Database ID、Collection ID 以及当前接口路径是否与服务端版本一致。');
-    }
-
-    if (appwriteError.code === 401 || appwriteError.code === 403) {
-      return new Error(`提交失败：${appwriteError.message}`);
-    }
-  }
-
   if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
     return new Error(
       '无法连接到 Appwrite 接口。请先检查 1) Appwrite 域名是否可直接访问 /v1/health，2) 是否被 Cloudflare Access、WAF 或登录保护拦截，3) Appwrite Platforms/CORS 是否已放行当前域名。浏览器直连 Appwrite 不需要 API Key。'
@@ -111,7 +86,6 @@ export async function submitEntry({
   category,
   file,
   onProgress,
-  onStageChange,
 }: {
   name: string;
   phone: string;
@@ -120,7 +94,6 @@ export async function submitEntry({
   category: string;
   file: File;
   onProgress?: (progress: number) => void;
-  onStageChange?: (stage: 'uploading' | 'saving') => void;
 }) {
   try {
     assertAppwriteConfigured();
@@ -131,7 +104,6 @@ export async function submitEntry({
 
     // Upload file to storage
     const fileId = ID.unique();
-    onStageChange?.('uploading');
     const uploadedFile = await storage!.createFile(
       selectedBucketId,
       fileId,
@@ -141,9 +113,6 @@ export async function submitEntry({
         onProgress?.(progress.progress);
       }
     );
-
-    onStageChange?.('saving');
-    onProgress?.(95);
 
     // Create database entry
     const entry = await databases!.createDocument(

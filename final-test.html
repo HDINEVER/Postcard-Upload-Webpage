@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>最终测试 - Appwrite 上传功能</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { color: #333; margin: 0 0 10px 0; font-size: 28px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        
+        .checklist {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+        .checklist h2 {
+            color: #495057;
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        .check-item {
+            display: flex;
+            align-items: flex-start;
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+        }
+        .check-item.warning {
+            border-left-color: #ffc107;
+        }
+        .check-item.error {
+            border-left-color: #dc3545;
+        }
+        .check-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .check-content {
+            flex: 1;
+        }
+        .check-title {
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 5px;
+        }
+        .check-desc {
+            color: #6c757d;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .test-section {
+            background: #e7f5ff;
+            border: 2px solid #339af0;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 30px 0;
+        }
+        .test-section h2 {
+            color: #1864ab;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+            display: block;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+            display: block;
+        }
+        
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            margin: 10px 0;
+        }
+        
+        .bucket-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .bucket-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+        }
+        .bucket-card.success {
+            border-color: #28a745;
+        }
+        .bucket-card.error {
+            border-color: #dc3545;
+        }
+        .bucket-name {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        .bucket-id {
+            font-family: monospace;
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+        .bucket-result {
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔍 配置检查与测试</h1>
+        <p class="subtitle">最后一步：验证所有配置是否完整</p>
+
+        <div class="checklist">
+            <h2>📋 配置检查清单</h2>
+            
+            <div class="check-item">
+                <div class="check-icon">✅</div>
+                <div class="check-content">
+                    <div class="check-title">1. Web 平台已配置</div>
+                    <div class="check-desc">
+                        ✓ localhost 已添加到 Platforms<br>
+                        ✓ pcubupload.hdinever.top 已添加
+                    </div>
+                </div>
+            </div>
+
+            <div class="check-item">
+                <div class="check-icon">✅</div>
+                <div class="check-content">
+                    <div class="check-title">2. Storage Bucket 权限已配置（从截图确认）</div>
+                    <div class="check-desc">
+                        ✓ Any 角色已添加<br>
+                        ✓ Create 权限已勾选<br>
+                        ✓ Read 权限已勾选
+                    </div>
+                </div>
+            </div>
+
+            <div class="check-item warning">
+                <div class="check-icon">⚠️</div>
+                <div class="check-content">
+                    <div class="check-title">3. 需要确认：是否配置了所有3个存储桶？</div>
+                    <div class="check-desc">
+                        必须配置这3个桶：<br>
+                        • 69df42a60004a562ba07 (明信片)<br>
+                        • 69df430100088d621422 (PPT)<br>
+                        • 69df4311003df133de23 (视频)
+                    </div>
+                </div>
+            </div>
+
+            <div class="check-item warning">
+                <div class="check-icon">⚠️</div>
+                <div class="check-content">
+                    <div class="check-title">4. 需要确认：Collection 权限是否已配置？</div>
+                    <div class="check-desc">
+                        Database → 69de43e100124b512cbb → Collection: project<br>
+                        Settings → Permissions → Any 角色 (Create + Read)
+                    </div>
+                </div>
+            </div>
+
+            <div class="check-item">
+                <div class="check-icon">⏱️</div>
+                <div class="check-content">
+                    <div class="check-title">5. 配置生效时间</div>
+                    <div class="check-desc">
+                        Appwrite 配置更改需要 1-2 分钟生效<br>
+                        请确保已点击 "Update" 或 "Save" 按钮保存
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 自动测试连接</h2>
+            <p>点击下面的按钮测试每个存储桶的连接状态：</p>
+            <button onclick="testAllBuckets()">🚀 开始测试所有存储桶</button>
+            
+            <div id="bucket-results"></div>
+            <div id="test-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 手动上传测试</h2>
+            <p>如果自动测试通过，请前往应用进行实际上传测试：</p>
+            <button onclick="window.open('http://localhost:3000', '_blank')">
+                📱 打开应用页面
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Client, Storage, Databases } from 'https://cdn.jsdelivr.net/npm/appwrite@16/dist/esm/index.js';
+
+        const config = {
+            endpoint: 'https://appwrite1.hdinever.top/v1',
+            projectId: '69dc5b0700295f5740d0',
+            databaseId: '69de43e100124b512cbb',
+            collectionId: 'project',
+            buckets: {
+                postcard: { id: '69df42a60004a562ba07', name: '明信片设计' },
+                ppt: { id: '69df430100088d621422', name: '演示文稿演讲' },
+                video: { id: '69df4311003df133de23', name: '项目上传视频' }
+            }
+        };
+
+        const client = new Client()
+            .setEndpoint(config.endpoint)
+            .setProject(config.projectId);
+
+        const storage = new Storage(client);
+        const databases = new Databases(client);
+
+        window.testAllBuckets = async function() {
+            const resultsDiv = document.getElementById('bucket-results');
+            const testResultDiv = document.getElementById('test-result');
+            
+            resultsDiv.innerHTML = '<p style="text-align:center; color:#666;">⏳ 正在测试，请稍候...</p>';
+            testResultDiv.innerHTML = '';
+
+            const results = [];
+            let allPassed = true;
+
+            // 测试每个存储桶
+            for (const [key, bucket] of Object.entries(config.buckets)) {
+                try {
+                    await storage.listFiles(bucket.id, [], 1);
+                    results.push({
+                        name: bucket.name,
+                        id: bucket.id,
+                        status: 'success',
+                        message: '✅ 权限配置正确'
+                    });
+                } catch (error) {
+                    allPassed = false;
+                    let message = '❌ 权限配置错误';
+                    
+                    if (error.code === 401) {
+                        message = '❌ 权限不足：未配置 Any 角色的 Read 权限';
+                    } else if (error.message.includes('fetch') || error.message.includes('CORS')) {
+                        message = '❌ CORS 错误：请检查 Platforms 配置';
+                    } else if (error.code === 404) {
+                        message = '⚠️ 存储桶不存在或 ID 错误';
+                    }
+                    
+                    results.push({
+                        name: bucket.name,
+                        id: bucket.id,
+                        status: 'error',
+                        message: message,
+                        error: error.message
+                    });
+                }
+            }
+
+            // 测试 Collection 权限
+            try {
+                await databases.listDocuments(config.databaseId, config.collectionId, [], 1);
+                results.push({
+                    name: 'Collection (project)',
+                    id: config.collectionId,
+                    status: 'success',
+                    message: '✅ 数据库权限配置正确'
+                });
+            } catch (error) {
+                allPassed = false;
+                let message = '❌ Collection 权限配置错误';
+                if (error.code === 401) {
+                    message = '❌ 权限不足：Collection 未配置 Any 角色的 Read 权限';
+                }
+                results.push({
+                    name: 'Collection (project)',
+                    id: config.collectionId,
+                    status: 'error',
+                    message: message,
+                    error: error.message
+                });
+            }
+
+            // 显示结果
+            let html = '<div class="bucket-status">';
+            results.forEach(result => {
+                html += `
+                    <div class="bucket-card ${result.status}">
+                        <div class="bucket-name">${result.name}</div>
+                        <div class="bucket-id">${result.id}</div>
+                        <div class="bucket-result">${result.message}</div>
+                        ${result.error ? `<pre style="margin-top:10px; font-size:11px;">${result.error}</pre>` : ''}
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+
+            // 显示总结
+            if (allPassed) {
+                testResultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3 style="margin:0 0 10px 0;">🎉 所有测试通过！</h3>
+                        <p>所有存储桶和数据库的权限配置都正确。</p>
+                        <p style="margin-top:15px;">
+                            <strong>下一步：</strong>强制刷新浏览器（Ctrl+Shift+R），然后测试上传功能。
+                        </p>
+                    </div>
+                `;
+            } else {
+                testResultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3 style="margin:0 0 10px 0;">⚠️ 发现配置问题</h3>
+                        <p>部分存储桶或数据库的权限配置有问题，请检查上面标记为红色的项目。</p>
+                        <p style="margin-top:15px;">
+                            <strong>解决方法：</strong>
+                        </p>
+                        <ol style="margin:10px 0; padding-left:20px; line-height:1.8;">
+                            <li>进入 Appwrite 控制台</li>
+                            <li>找到标记为错误的存储桶或 Collection</li>
+                            <li>Settings → Permissions → 确保 Any 角色有 Create 和 Read 权限</li>
+                            <li>保存后等待 1-2 分钟</li>
+                            <li>重新运行此测试</li>
+                        </ol>
+                    </div>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>
