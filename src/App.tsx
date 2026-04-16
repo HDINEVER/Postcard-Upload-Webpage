@@ -12,7 +12,7 @@ import { submitEntry } from './lib/appwrite';
 const SCHOOL_OPTIONS = [
   { label: '上海震旦职业学院', value: '上海震旦职业学院' },
   { label: '上海外国语大学贤达经济人文学院', value: '上海外国语大学贤达经济人文学院' },
-  { label: '上海建桥学院', value: '上 海建桥学院' },
+  { label: '上海建桥学院', value: '上海建桥学院' },
   { label: '上海师范大学天华学院', value: '上海师范大学天华学院' },
 ];
 
@@ -26,8 +26,8 @@ const FILE_RULES: Record<string, { accept: string; label: string }> = {
     label: '支持 PPT、PPTX、PDF 文档文件',
   },
   video: {
-    accept: '.zip,.rar,application/zip,application/x-zip-compressed,application/x-rar-compressed',
-    label: '支持 ZIP、RAR 压缩包，建议控制在 200MB 内',
+    accept: '',
+    label: '请粘贴网盘链接（百度云/夸克等）',
   },
 };
 
@@ -39,6 +39,7 @@ type FormState = {
   school: string;
   studentId: string;
   category: CategoryKey;
+  videoUrl?: string;
 };
 
 type UploadStage = 'uploading' | 'saving';
@@ -173,6 +174,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     school: '',
     studentId: '',
     category: 'postcard',
+    videoUrl: '',
   });
 
   useEffect(() => {
@@ -206,7 +208,9 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const nextValue =
+      name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
   };
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -216,7 +220,12 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextCategory = e.target.value as CategoryKey;
-    setFormData(prev => ({ ...prev, category: nextCategory }));
+    setFormData(prev => ({ 
+      ...prev, 
+      category: nextCategory,
+      // Clear videoUrl when switching away from video category
+      videoUrl: nextCategory === 'video' ? prev.videoUrl : '',
+    }));
     setFile(filesByCategory[nextCategory]);
     setError(null);
     setIsDragging(false);
@@ -281,12 +290,37 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let normalizedVideoUrl: string | undefined;
     
     // Validation
-    if (!formData.name || !formData.phone || !formData.school || !formData.studentId || !file) {
-      setError('请填写所有必需的字段并选择文件');
+    if (!formData.name || !formData.phone || !formData.school || !formData.studentId) {
+      setError('请填写所有必需的字段');
       return;
     }
+
+    if (!/^\d{11}$/.test(formData.phone.trim())) {
+      setError('请输入11位手机号');
+      return;
+    }
+
+    if (formData.category === 'video') {
+      if (!formData.videoUrl || formData.videoUrl.trim() === '') {
+        setError('请粘贴网盘链接');
+        return;
+      }
+
+      normalizedVideoUrl = formData.videoUrl.trim();
+
+      console.log('[Submit] Video category - extractedUrl:', normalizedVideoUrl);
+    } else {
+      if (!file) {
+        setError('请选择文件');
+        return;
+      }
+      console.log('[Submit] File category:', formData.category, '- fileName:', file.name);
+    }
+
+    console.log('[Submit] Submitting with formData:', formData);
 
     setError(null);
     setLoading(true);
@@ -301,7 +335,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         school: formData.school,
         studentId: formData.studentId,
         category: formData.category,
-        file: file,
+        file: formData.category === 'video' ? null : file,
+        videoUrl: formData.category === 'video' ? normalizedVideoUrl : undefined,
         onProgress: (progress) => {
           setUploadProgress((current) => Math.max(current, Math.round(progress)));
         },
@@ -392,8 +427,11 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     name="phone"
                     value={formData.phone}
                     onChange={handleInputChange}
+                    inputMode="numeric"
+                    pattern="[0-9]{11}"
+                    maxLength={11}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入手机号码" 
+                    placeholder="请输入11位手机号码" 
                   />
                 </div>
                 <div className="space-y-2">
@@ -471,8 +509,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       className="sr-only" 
                     />
                     <span className="flex flex-col">
-                      <span className="block text-sm font-bold text-zinc-900">项目上传视频</span>
-                      <span className="mt-1 flex items-center text-xs text-zinc-500">200MB内ZIP打包</span>
+                      <span className="block text-sm font-bold text-zinc-900">项目视频</span>
+                      <span className="mt-1 flex items-center text-xs text-zinc-500">网盘链接 (百度云/夸克)</span>
                     </span>
                   </label>
                 </div>
@@ -480,77 +518,107 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
-                <div
-                  onClick={openFilePicker}
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                  }}
-                  onDrop={handleDrop}
-                  className={`mt-2 flex w-full justify-center rounded-xl border-2 border-dashed px-6 py-12 transition-all relative group bg-zinc-50/50 text-left cursor-pointer ${
-                    isDragging
-                      ? 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100'
-                      : 'border-zinc-200 hover:border-orange-400 hover:bg-orange-50/30'
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="w-16 h-16 mb-4 mx-auto bg-white rounded-full shadow-sm flex items-center justify-center border border-zinc-100 group-hover:scale-110 transition-transform">
-                      <Upload className="h-8 w-8 text-zinc-400 group-hover:text-orange-500 transition-colors" aria-hidden="true" />
+                
+                {formData.category === 'video' ? (
+                  // Video category: link input
+                  <div className="space-y-2">
+                    <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-700">
+                      <p className="font-medium mb-2">网盘链接上传</p>
+                      <p className="text-xs">支持百度云盘、夸克网盘等。请设置文件提取有效期为 <strong>永久</strong>，否则组委会可能无法下载。</p>
                     </div>
-                    <div className="flex text-sm leading-6 text-zinc-600 justify-center">
-                      <span className="rounded-md font-bold text-orange-600">
-                        点击选择文件
-                      </span>
-                      <p className="pl-1">或拖拽至此区域</p>
-                    </div>
-                    <p className="text-xs leading-5 text-zinc-400 mt-2">{currentFileRule.label}</p>
                     <input
-                      ref={fileInputRef}
-                      id="file-upload"
-                      name="file-upload"
-                      type="file"
-                      required
-                      accept={currentFileRule.accept}
-                      className="sr-only"
-                      onChange={handleFileChange}
+                      type="text"
+                      name="videoUrl"
+                      value={formData.videoUrl || ''}
+                      onChange={handleInputChange}
+                      placeholder="请粘贴网盘分享内容（链接、提取码或整段文案均可）"
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white"
                     />
-                    {file && (
-                      <motion.div 
+                    {formData.videoUrl && (
+                      <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
+                        className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm font-medium"
                       >
-                        <span className="truncate max-w-[200px]">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setFile(null);
-                            setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-                            if (fileInputRef.current) {
-                              fileInputRef.current.value = '';
-                            }
-                          }}
-                          className="ml-2 text-orange-400 hover:text-orange-600"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>链接已粘贴</span>
                       </motion.div>
                     )}
                   </div>
-                </div>
+                ) : (
+                  // Postcard & Presentation: file upload
+                  <div
+                    onClick={openFilePicker}
+                    onDragEnter={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(true);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(false);
+                    }}
+                    onDrop={handleDrop}
+                    className={`mt-2 flex w-full justify-center rounded-xl border-2 border-dashed px-6 py-12 transition-all relative group bg-zinc-50/50 text-left cursor-pointer ${
+                      isDragging
+                        ? 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100'
+                        : 'border-zinc-200 hover:border-orange-400 hover:bg-orange-50/30'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="w-16 h-16 mb-4 mx-auto bg-white rounded-full shadow-sm flex items-center justify-center border border-zinc-100 group-hover:scale-110 transition-transform">
+                        <Upload className="h-8 w-8 text-zinc-400 group-hover:text-orange-500 transition-colors" aria-hidden="true" />
+                      </div>
+                      <div className="flex text-sm leading-6 text-zinc-600 justify-center">
+                        <span className="rounded-md font-bold text-orange-600">
+                          点击选择文件
+                        </span>
+                        <p className="pl-1">或拖拽至此区域</p>
+                      </div>
+                      <p className="text-xs leading-5 text-zinc-400 mt-2">{currentFileRule.label}</p>
+                      <input
+                        ref={fileInputRef}
+                        id="file-upload"
+                        name="file-upload"
+                        type="file"
+                        required
+                        accept={currentFileRule.accept}
+                        className="sr-only"
+                        onChange={handleFileChange}
+                      />
+                      {file && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
+                        >
+                          <span className="truncate max-w-[200px]">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setFile(null);
+                              setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = '';
+                              }
+                            }}
+                            className="ml-2 text-orange-400 hover:text-orange-600"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </motion.div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-6 border-t border-zinc-100 flex justify-end gap-4">
