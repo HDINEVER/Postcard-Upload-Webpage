@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, X, CheckCircle2, ChevronRight, AlertCircle, ChevronDown } from 'lucide-react';
 import gsap from 'gsap';
-import confetti from 'canvas-confetti';
 import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
 const SCHOOL_OPTIONS = [
@@ -200,36 +199,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
   });
 
   useEffect(() => {
-    if (step === 3) {
-      // Trigger confetti from both edges
-      const duration = 2.5 * 1000;
-      const end = Date.now() + duration;
-      const colors = ['#f97316', '#fb923c', '#fdba74', '#10b981', '#22c55e', '#3b82f6', '#f43f5e'];
-
-      (function frame() {
-        confetti({
-          particleCount: 5,
-          angle: 60,
-          spread: 55,
-          origin: { x: 0 },
-          colors: colors
-        });
-        confetti({
-          particleCount: 5,
-          angle: 120,
-          spread: 55,
-          origin: { x: 1 },
-          colors: colors
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      }());
-    }
-  }, [step]);
-
-  useEffect(() => {
     if (!loading || step !== 2) {
       return;
     }
@@ -327,10 +296,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     setFilesByCategory((prev) => ({ ...prev, [formData.category]: selectedFile }));
 
     // Immediately start uploading while the user fills the rest of the form.
-    // Pass name+studentId if already filled so the file is stored with the correct name.
     const category = formData.category;
-    const currentName = formData.name.trim();
-    const currentStudentId = formData.studentId.trim();
     setPreUploadByCategory((prev) => ({
       ...prev,
       [category]: { status: 'uploading', progress: 0, fileId: null, bucketId: null, error: null },
@@ -343,8 +309,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
           ...prev,
           [category]: { ...prev[category], progress: pct },
         })),
-      currentName || undefined,
-      currentStudentId || undefined,
     )
       .then(({ fileId, bucketId }) => {
         setPreUploadByCategory((prev) => ({
@@ -643,14 +607,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
-
-                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
-                {formData.category !== 'video' && (!formData.name.trim() || !formData.studentId.trim()) && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    请先填写<strong>姓名</strong>和<strong>学号</strong>，文件将以「学号_姓名_类别」命名上传
-                  </div>
-                )}
+                
                 {formData.category === 'video' ? (
                   // Video category: link input
                   <div className="space-y-2">
@@ -945,20 +902,14 @@ export default function App() {
             第三届大学生
           </div>
           
-          <h1
-            className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap"
-            style={{ fontFamily: "'ZCOOL XiaoWei', serif" }}
-          >
-            <span>非遗</span>
+          <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] font-black tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap">
+            <span>设计</span>
             <span className="text-orange-500 font-serif italic font-light text-5xl sm:text-7xl md:text-8xl lg:text-[8rem]">&</span>
-            <span>文创</span>
+            <span>演讲</span>
           </h1>
           
-          <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
-            非遗主题文创产品设计及演示文稿演讲大赛
-          </p>
-          <p className="text-sm sm:text-base text-zinc-400 mb-12 tracking-widest">
-            明信片 · 书签 · 冰筱贴 · 徽章 · 帆布袋
+          <p className="text-lg sm:text-xl md:text-3xl font-medium text-zinc-500 mb-12 tracking-wide">
+            明信片设计及演示文稿演讲大赛
           </p>
 
           <motion.button 

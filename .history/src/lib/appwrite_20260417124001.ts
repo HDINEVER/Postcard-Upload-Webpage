@@ -314,9 +314,7 @@ export async function startFileUpload(
   category: string,
   file: File,
   onProgress?: (pct: number) => void,
-  name?: string,
-  studentId?: string,
-): Promise<{ fileId: string; bucketId: string; displayFileName: string }> {
+): Promise<{ fileId: string; bucketId: string }> {
   try {
     assertAppwriteConfigured();
     const selectedBucketId = categoryToBucketId[category];
@@ -327,18 +325,8 @@ export async function startFileUpload(
       throw new Error('文件大小为 0，请重新选择文件');
     }
     const fileId = ID.unique();
-    const fileExtension = file.name.split('.').pop() || 'bin';
-    let displayFileName: string;
-    if (name && studentId) {
-      const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
-      const safeName = sanitizeFileNamePart(name) || 'anonymous';
-      displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
-    } else {
-      displayFileName = file.name;
-    }
-    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, displayFileName);
-    console.info('[Appwrite] Pre-upload complete:', { fileId, displayFileName });
-    return { fileId, bucketId: selectedBucketId, displayFileName };
+    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, file.name);
+    return { fileId, bucketId: selectedBucketId };
   } catch (error) {
     throw normalizeSubmissionError(error);
   }
@@ -379,11 +367,18 @@ export async function finalizeFileSubmission({
     const safeName = sanitizeFileNamePart(name) || 'anonymous';
     const displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
 
+    // Step 1: rename the file in the bucket.
+    try {
+      await storage!.updateFile(bucketId, fileId, displayFileName);
+      console.info('[Appwrite] File renamed:', { fileId, displayFileName });
+    } catch (renameErr) {
+      // Non-fatal: rename failed (e.g. permissions), continue to write DB record.
+      console.warn('[Appwrite] File rename failed (non-fatal):', renameErr);
+    }
+
     onProgress?.(50);
 
-    // Create DB document with the same ID as the file so they are permanently linked.
-    // (Rename via storage.updateFile is skipped: guest users only have create permission,
-    //  not update — the file is already named correctly at upload time via startFileUpload.)
+    // Step 2: create DB document with the same ID as the file so they are permanently linked.
     const entry = await databases!.createDocument(
       config.databaseId,
       config.collectionId,

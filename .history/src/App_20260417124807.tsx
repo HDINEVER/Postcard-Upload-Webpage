@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, X, CheckCircle2, ChevronRight, AlertCircle, ChevronDown } from 'lucide-react';
 import gsap from 'gsap';
-import confetti from 'canvas-confetti';
 import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
 const SCHOOL_OPTIONS = [
@@ -198,36 +197,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     category: 'postcard',
     videoUrl: '',
   });
-
-  useEffect(() => {
-    if (step === 3) {
-      // Trigger confetti from both edges
-      const duration = 2.5 * 1000;
-      const end = Date.now() + duration;
-      const colors = ['#f97316', '#fb923c', '#fdba74', '#10b981', '#22c55e', '#3b82f6', '#f43f5e'];
-
-      (function frame() {
-        confetti({
-          particleCount: 5,
-          angle: 60,
-          spread: 55,
-          origin: { x: 0 },
-          colors: colors
-        });
-        confetti({
-          particleCount: 5,
-          angle: 120,
-          spread: 55,
-          origin: { x: 1 },
-          colors: colors
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      }());
-    }
-  }, [step]);
 
   useEffect(() => {
     if (!loading || step !== 2) {

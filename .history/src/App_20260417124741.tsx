@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, X, CheckCircle2, ChevronRight, AlertCircle, ChevronDown } from 'lucide-react';
 import gsap from 'gsap';
-import confetti from 'canvas-confetti';
 import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
 const SCHOOL_OPTIONS = [
@@ -198,36 +197,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     category: 'postcard',
     videoUrl: '',
   });
-
-  useEffect(() => {
-    if (step === 3) {
-      // Trigger confetti from both edges
-      const duration = 2.5 * 1000;
-      const end = Date.now() + duration;
-      const colors = ['#f97316', '#fb923c', '#fdba74', '#10b981', '#22c55e', '#3b82f6', '#f43f5e'];
-
-      (function frame() {
-        confetti({
-          particleCount: 5,
-          angle: 60,
-          spread: 55,
-          origin: { x: 0 },
-          colors: colors
-        });
-        confetti({
-          particleCount: 5,
-          angle: 120,
-          spread: 55,
-          origin: { x: 1 },
-          colors: colors
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      }());
-    }
-  }, [step]);
 
   useEffect(() => {
     if (!loading || step !== 2) {
@@ -643,14 +612,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
-
-                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
-                {formData.category !== 'video' && (!formData.name.trim() || !formData.studentId.trim()) && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    请先填写<strong>姓名</strong>和<strong>学号</strong>，文件将以「学号_姓名_类别」命名上传
-                  </div>
-                )}
+                
                 {formData.category === 'video' ? (
                   // Video category: link input
                   <div className="space-y-2">
