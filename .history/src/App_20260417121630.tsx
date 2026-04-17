@@ -377,36 +377,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         setError(preUpload.error || '文件上传失败，请重新选择文件并重试');
         return;
       }
-      // File already pre-uploaded — finalize: rename file + write DB record
-      setError(null);
-      setLoading(true);
-      setUploadStage('saving');
-      setUploadProgress(10);
-      setStep(2);
-
-      try {
-        await finalizeFileSubmission({
-          name: formData.name,
-          phone: formData.phone,
-          school: formData.school,
-          studentId: formData.studentId,
-          category: formData.category,
-          fileId: preUpload.fileId,
-          bucketId: preUpload.bucketId!,
-          originalFileName: file.name,
-          onProgress: (pct) => setUploadProgress((curr) => Math.max(curr, pct)),
-        });
-        setUploadProgress(100);
-        setStep(3);
-        setLoading(false);
-      } catch (err) {
-        setLoading(false);
-        setUploadProgress(0);
-        setUploadStage('saving');
-        setStep(1);
-        setError(err instanceof Error ? err.message : '提交失败，请重试');
-        console.error('Submit error:', err);
-      }
+      // File already pre-uploaded — jump directly to success
+      setStep(3);
       return;
     }
 
@@ -936,8 +908,7 @@ export default function App() {
         </div>
         <div className="md:text-right space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">活动时间</p>
-          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026.4.20 - 2026.5.24</p>
-          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 24 日 24:00</span></p>
+          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026.4.20 - 2026.5.15</p>
         </div>
       </footer>
 

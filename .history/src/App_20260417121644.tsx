@@ -936,8 +936,7 @@ export default function App() {
         </div>
         <div className="md:text-right space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">活动时间</p>
-          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026.4.20 - 2026.5.24</p>
-          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 24 日 24:00</span></p>
+          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026.4.20 - 2026.5.15</p>
         </div>
       </footer>
 
