@@ -369,24 +369,15 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         setError('请选择文件');
         return;
       }
-      if (preUpload.status === 'uploading') {
-        setError('文件正在上传中，请稍候再提交');
-        return;
-      }
-      if (preUpload.status !== 'done' || !preUpload.fileId) {
-        setError(preUpload.error || '文件上传失败，请重新选择文件并重试');
-        return;
-      }
-      // File already pre-uploaded — jump directly to success
-      setStep(3);
-      return;
+      console.log('[Submit] File category:', formData.category, '- fileName:', file.name);
     }
 
-    // Video category: save the link to the database (file categories returned early above)
+    console.log('[Submit] Submitting with formData:', formData);
+
     setError(null);
     setLoading(true);
-    setUploadStage('saving');
-    setUploadProgress(10);
+    setUploadStage('uploading');
+    setUploadProgress(6);
     setStep(2);
 
     try {
@@ -396,8 +387,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         school: formData.school,
         studentId: formData.studentId,
         category: formData.category,
-        file: null,
-        videoUrl: normalizedVideoUrl,
+        file: formData.category === 'video' ? null : file,
+        videoUrl: formData.category === 'video' ? normalizedVideoUrl : undefined,
         onProgress: (progress) => {
           setUploadProgress((current) => Math.max(current, Math.round(progress)));
         },
@@ -412,7 +403,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setLoading(false);
       setUploadProgress(0);
-      setUploadStage('saving');
+      setUploadStage('uploading');
       setStep(1);
       setError(err instanceof Error ? err.message : '提交失败，请重试');
       console.error('Submit error:', err);
@@ -654,108 +645,28 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                         onChange={handleFileChange}
                       />
                       {file && (
-                        <AnimatePresence mode="wait">
-                          {preUpload.status === 'uploading' && (
-                            <motion.div
-                              key="uploading"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0 }}
-                              className="mt-6 w-full max-w-xs mx-auto"
-                            >
-                              <div className="flex items-center justify-between text-xs text-zinc-600 mb-1.5 font-medium">
-                                <span className="truncate mr-2">{file.name}</span>
-                                <span className="flex-shrink-0">{preUpload.progress}%</span>
-                              </div>
-                              <div className="w-full bg-zinc-200 rounded-full h-2 overflow-hidden">
-                                <motion.div
-                                  className="h-2 bg-orange-500 rounded-full"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${preUpload.progress}%` }}
-                                  transition={{ ease: 'linear', duration: 0.3 }}
-                                />
-                              </div>
-                              <p className="text-xs text-zinc-400 mt-1.5 text-center">上传中，请勿关闭页面...</p>
-                            </motion.div>
-                          )}
-                          {preUpload.status === 'done' && (
-                            <motion.div
-                              key="done"
-                              initial={{ opacity: 0, scale: 0.9 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-green-50 border border-green-200 text-green-700 text-sm font-medium shadow-sm"
-                            >
-                              <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0" />
-                              <span className="truncate max-w-[180px]">{file.name}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setFile(null);
-                                  setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-                                  setPreUploadByCategory((prev) => ({ ...prev, [formData.category]: { ...EMPTY_PRE_UPLOAD } }));
-                                  if (fileInputRef.current) {
-                                    fileInputRef.current.value = '';
-                                  }
-                                }}
-                                className="ml-2 text-green-400 hover:text-green-600"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </motion.div>
-                          )}
-                          {preUpload.status === 'error' && (
-                            <motion.div
-                              key="error"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="mt-6 space-y-2"
-                            >
-                              <div className="flex items-center gap-2 text-red-600 text-xs justify-center">
-                                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                                <span className="text-center">{preUpload.error}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  assignFile(file);
-                                }}
-                                className="block mx-auto text-xs text-orange-600 font-medium hover:text-orange-700 underline"
-                              >
-                                点击重试
-                              </button>
-                            </motion.div>
-                          )}
-                          {(preUpload.status === 'idle') && (
-                            <motion.div
-                              key="idle"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
-                            >
-                              <span className="truncate max-w-[200px]">{file.name}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setFile(null);
-                                  setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-                                  setPreUploadByCategory((prev) => ({ ...prev, [formData.category]: { ...EMPTY_PRE_UPLOAD } }));
-                                  if (fileInputRef.current) {
-                                    fileInputRef.current.value = '';
-                                  }
-                                }}
-                                className="ml-2 text-orange-400 hover:text-orange-600"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
+                        >
+                          <span className="truncate max-w-[200px]">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setFile(null);
+                              setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = '';
+                              }
+                            }}
+                            className="ml-2 text-orange-400 hover:text-orange-600"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </motion.div>
                       )}
                     </div>
                   </div>
@@ -773,14 +684,10 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading')}
+                  disabled={loading}
                   className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
-                  {loading
-                    ? '提交中...'
-                    : formData.category !== 'video' && preUpload.status === 'uploading'
-                    ? '文件上传中...'
-                    : '确认提交'}
+                  {loading ? '上传中...' : '确认提交'}
                 </button>
               </div>
             </form>

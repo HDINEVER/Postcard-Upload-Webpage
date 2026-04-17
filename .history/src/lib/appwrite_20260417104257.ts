@@ -305,33 +305,6 @@ function sanitizeFileNamePart(value: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
-/**
- * Upload a file to the appropriate bucket immediately when selected (pre-upload pattern).
- * Call this as soon as the user picks a file so the upload runs while they fill the form.
- * Returns { fileId, bucketId } on success for later reference.
- */
-export async function startFileUpload(
-  category: string,
-  file: File,
-  onProgress?: (pct: number) => void,
-): Promise<{ fileId: string; bucketId: string }> {
-  try {
-    assertAppwriteConfigured();
-    const selectedBucketId = categoryToBucketId[category];
-    if (!selectedBucketId) {
-      throw new Error('参赛类别无效，请重新选择');
-    }
-    if (file.size === 0) {
-      throw new Error('文件大小为 0，请重新选择文件');
-    }
-    const fileId = ID.unique();
-    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, file.name);
-    return { fileId, bucketId: selectedBucketId };
-  } catch (error) {
-    throw normalizeSubmissionError(error);
-  }
-}
-
 // Helper function to upload submission
 export async function submitEntry({
   name,

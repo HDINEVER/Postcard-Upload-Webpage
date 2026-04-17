@@ -773,14 +773,10 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading')}
+                  disabled={loading}
                   className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
-                  {loading
-                    ? '提交中...'
-                    : formData.category !== 'video' && preUpload.status === 'uploading'
-                    ? '文件上传中...'
-                    : '确认提交'}
+                  {loading ? '上传中...' : '确认提交'}
                 </button>
               </div>
             </form>
