@@ -959,17 +959,21 @@ export default function App() {
           {/* Protective glow to ensure text readability against floating cards */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[160%] bg-white/90 blur-3xl rounded-full pointer-events-none -z-10"></div>
 
+          <div className="inline-block mb-6 px-5 py-2 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-base font-bold tracking-widest">
+            新力量·新传承
+          </div>
+          
           <h1
             className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap"
             style={{ fontFamily: "'ZCOOL XiaoWei', serif" }}
           >
-            <span>新力量</span>
+            <span>非遗</span>
             <span className="text-orange-500 font-serif italic font-light text-5xl sm:text-7xl md:text-8xl lg:text-[8rem]">&</span>
-            <span>新传承</span>
+            <span>文创</span>
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
-            第三届非遗文化创新作品大赛
+            非遗文化创新作品大赛
           </p>
           <p className="text-sm sm:text-base text-zinc-400 mb-6 tracking-widest">
             明信片、书签、冰箱贴、徽章、帆布袋等

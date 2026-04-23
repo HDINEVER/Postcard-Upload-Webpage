@@ -963,9 +963,9 @@ export default function App() {
             className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap"
             style={{ fontFamily: "'ZCOOL XiaoWei', serif" }}
           >
-            <span>新力量</span>
+            <span>非遗</span>
             <span className="text-orange-500 font-serif italic font-light text-5xl sm:text-7xl md:text-8xl lg:text-[8rem]">&</span>
-            <span>新传承</span>
+            <span>文创</span>
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
