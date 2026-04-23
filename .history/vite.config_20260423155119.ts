@@ -1,16 +1,18 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Upload, X, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
-import gsap from 'gsap';
-import confetti from 'canvas-confetti';
-import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+});
 
-
+const SCHOOL_OPTIONS = [
+  { label: '上海震旦职业学院', value: '上海震旦职业学院' },
+  { label: '上海外国语大学贤达经济人文学院', value: '上海外国语大学贤达经济人文学院' },
+  { label: '上海建桥学院', value: '上海建桥学院' },
+  { label: '上海师范大学天华学院', value: '上海师范大学天华学院' },
+];
 
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
   postcard: {
@@ -34,7 +36,6 @@ type FormState = {
   phone: string;
   school: string;
   studentId: string;
-  teacher: string;
   category: CategoryKey;
   videoUrl?: string;
 };
@@ -191,7 +192,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     phone: '',
     school: '',
     studentId: '',
-    teacher: '',
     category: 'postcard',
     videoUrl: '',
   });
@@ -384,7 +384,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     }
 
     if (!/^\d{11}$/.test(formData.phone.trim())) {
-      setError('请输入11位手机号');
+      setError('请输入 11 位手机号');
       return;
     }
 
@@ -558,15 +558,23 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="school"
-                    value={formData.school}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入所在学校全称" 
-                  />
+                  <div className="relative">
+                    <select
+                      required
+                      name="school"
+                      value={formData.school}
+                      onChange={handleSelectChange}
+                      className="w-full appearance-none px-4 py-3 pr-12 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white text-zinc-900"
+                    >
+                      <option value="" disabled>请选择所在学校</option>
+                      {SCHOOL_OPTIONS.map((school) => (
+                        <option key={school.label} value={school.value}>
+                          {school.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
@@ -578,17 +586,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
                     placeholder="请输入学号" 
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-zinc-900">指导教师 <span className="text-zinc-400 font-normal text-xs">（可不填）</span></label>
-                  <input 
-                    type="text" 
-                    name="teacher"
-                    value={formData.teacher}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入指导教师姓名" 
                   />
                 </div>
               </div>
@@ -606,7 +603,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       className="sr-only" 
                     />
                     <span className="flex flex-col">
-                      <span className="block text-sm font-bold text-zinc-900">文创设计</span>
+                      <span className="block text-sm font-bold text-zinc-900">明信片设计</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">图片格式 (JPG/PNG)</span>
                     </span>
                   </label>
@@ -644,14 +641,11 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
 
-                {/* Hint: fill name+phone first so the file gets the correct name in the bucket */}
-                {formData.category !== 'video' && (!formData.name.trim() || !formData.phone.trim()) && (
+                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
+                {formData.category !== 'video' && (!formData.name.trim() || !formData.studentId.trim()) && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    {formData.category === 'postcard'
-                      ? <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称_序号 命名上传</>
-                      : <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称 命名上传</>
-                    }
+                    请先填写<strong>姓名</strong>和<strong>学号</strong>，文件将以「学号_姓名_类别」命名上传
                   </div>
                 )}
                 {formData.category === 'video' ? (
@@ -668,7 +662,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_介绍视频</strong></span>
+                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校 - 姓名 - 学号</strong></span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
@@ -939,7 +933,7 @@ export default function App() {
 
       {/* Header */}
       <header className="relative z-10 flex justify-between items-center p-6 md:p-10">
-        <div className="text-base md:text-xl font-bold tracking-tight text-zinc-800 flex items-center gap-2">
+        <div className="text-sm md:text-base font-bold tracking-tight text-zinc-800 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-orange-500"></div>
           上海市民办高校新联会
         </div>
@@ -977,14 +971,11 @@ export default function App() {
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
-            非遗文化创新作品大赛
+            非遗主题文创产品设计及演示文稿演讲大赛
           </p>
-          <p className="text-sm sm:text-base text-zinc-400 mb-6 tracking-widest">
-            明信片、书签、冰箱贴、徽章、帆布袋等
+          <p className="text-sm sm:text-base text-zinc-400 mb-12 tracking-widest">
+            明信片 · 书签 · 冰筱贴 · 徽章 · 帆布袋
           </p>
-          <div className="inline-block mb-8 px-5 py-2 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-base font-bold tracking-widest">
-            新力量·新传承
-          </div>
 
           <motion.button 
             whileHover={{ scale: 1.05 }}
@@ -1008,12 +999,12 @@ export default function App() {
           <p><span className="font-semibold text-zinc-500">指导单位：</span>上海市教委民办教育管理处（民办教育综合党委办公室）</p>
           <p><span className="font-semibold text-zinc-500">主办单位：</span>上海市民办高校新的社会阶层人士联谊会</p>
           <p><span className="font-semibold text-zinc-500">承办单位：</span>新联会上海师范大学天华学院分会</p>
-          <p><span className="font-semibold text-zinc-500">协办单位：</span>新联会上海建桥学院分会、上海震旦职业学院分会、上海外国语大学贤达人文学院分会</p>
+          <p><span className="font-semibold text-zinc-500">协办单位：</span>新联会上海建桥学院分会、新联会上海震旦职业学院分会、新联会上海外国语大学贤达人文学院分会</p>
         </div>
         <div className="md:text-right space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">活动时间</p>
-          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026 年 4 月 — 6 月</p>
-          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 31 日 24:00</span></p>
+          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026 年 4 月 — 5 月</p>
+          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 24 日 24:00</span></p>
         </div>
       </footer>
 

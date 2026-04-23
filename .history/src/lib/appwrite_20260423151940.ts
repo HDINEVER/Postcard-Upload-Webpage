@@ -21,7 +21,7 @@ const appwriteConfig = {
   collectionId: (import.meta.env.VITE_APPWRITE_COLLECTION_ID || 'project').trim(),
   bucketId: (import.meta.env.VITE_APPWRITE_BUCKET_ID || '').trim(),
   bucketIds: {
-    video: (import.meta.env.VITE_APPWRITE_BUCKET_VIDEO || '69e1b6c80005490899cc').trim(),
+    video: (import.meta.env.VITE_APPWRITE_BUCKET_VIDEO || '69df4311003df133de23').trim(),
     presentation: (import.meta.env.VITE_APPWRITE_BUCKET_PPT || '69df430100088d621422').trim(),
     postcard: (import.meta.env.VITE_APPWRITE_BUCKET_POSTCARD || '69df42a60004a562ba07').trim(),
   },
@@ -73,11 +73,9 @@ const categoryToBucketId: Record<string, string> = {
   postcard: appwriteConfig.bucketIds.postcard,
 };
 
-// 2 MB per chunk — balances speed (~8 requests for 15 MB) and reliability:
-// each chunk at 2 Mbps takes ~8 s, well under Cloudflare's 100 s proxy timeout.
-// (500 KB = 30 requests; 5 MB = 3 requests but triggers CF 499 on slow connections)
-const UPLOAD_CHUNK_SIZE = 2 * 1024 * 1024;
-const CHUNK_REQUEST_TIMEOUT_MS = 120_000;
+// 500 KB per chunk — safely under the ~60 s Cloudflare proxy timeout at current upload bandwidth.
+const UPLOAD_CHUNK_SIZE = 500 * 1024;
+const CHUNK_REQUEST_TIMEOUT_MS = 90_000;
 const MAX_CHUNK_RETRIES = 4;
 const BASE_RETRY_DELAY_MS = 1_500;
 
@@ -125,48 +123,15 @@ async function fetchChunkWithRetry(
       }
 
       const body = await response.text().catch(() => '');
-      let parsedMessage = body;
-      try {
-        const json = JSON.parse(body);
-        if (json?.message) parsedMessage = json.message;
-      } catch { /* not JSON */ }
-
-      let parsedType: string | undefined;
-      try { parsedType = JSON.parse(body)?.type; } catch { /* not JSON */ }
-
-      const err = {
-        message: parsedMessage || response.statusText,
-        code: response.status,
-        type: parsedType,
-      };
-
-      // Non-retriable errors (4xx except 499): propagate immediately, no point in retrying
       const retriable = response.status === 499 || response.status === 502 || response.status === 503 || response.status === 504;
-      if (!retriable) {
-        console.error('[Appwrite] Upload failed (non-retriable):', {
-          status: response.status,
-          type: parsedType,
-          message: parsedMessage,
-          range: `${start}-${end - 1}/${totalSize}`,
-        });
-        throw err;
-      }
-
-      lastError = err;
-      if (attempt === MAX_CHUNK_RETRIES) {
-        break;
+      if (!retriable || attempt === MAX_CHUNK_RETRIES) {
+        throw {
+          message: body || response.statusText,
+          code: response.status,
+        };
       }
     } catch (error) {
       clearTimeout(timeout);
-      // If this is our own non-retriable throw, propagate it immediately
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        typeof (error as { code: unknown }).code === 'number'
-      ) {
-        throw error;
-      }
       lastError = error;
       if (attempt === MAX_CHUNK_RETRIES) {
         break;
@@ -183,9 +148,9 @@ async function fetchChunkWithRetry(
     await sleep(delayMs);
   }
 
-  // Preserve the original error so normalizeSubmissionError can decode it
-  if (lastError !== undefined) throw lastError;
-  throw new Error(`分块上传失败: ${start}-${end - 1}/${totalSize}`);
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`分块上传失败: ${start}-${end - 1}/${totalSize}`);
 }
 
 /**
@@ -308,19 +273,8 @@ function normalizeSubmissionError(error: unknown): Error {
       return new Error('提交失败：Appwrite 文档接口未找到，请检查 Database ID、Collection ID 以及当前接口路径是否与服务端版本一致。');
     }
 
-    if (appwriteError.code === 401) {
-      return new Error(`文件上传被拒绝 (401)：存储桶未授权当前用户上传，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
-    }
-
-    if (appwriteError.code === 403) {
-      return new Error(`文件上传被拒绝 (403)：存储桶权限不足，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
-    }
-
-    if (appwriteError.code === 500) {
-      return new Error(
-        `文件上传服务器内部错误 (500)：${appwriteError.message || '未知错误'}。` +
-        `请检查：① Appwrite Storage 磁盘/对象存储是否正常；② 存储桶是否设置了文件类型白名单（不包含当前文件扩展名）；③ 存储桶最大文件大小限制。Appwrite 类型：${appwriteError.type || '未知'}`
-      );
+    if (appwriteError.code === 401 || appwriteError.code === 403) {
+      return new Error(`提交失败：${appwriteError.message}`);
     }
 
     if (appwriteError.code === 499 || appwriteError.message.includes('Client Closed Request')) {
@@ -401,6 +355,8 @@ export async function finalizeFileSubmission({
   phone,
   school,
   studentId,
+  teacher,
+  teacherId,
   category,
   fileId,
   bucketId,
@@ -411,6 +367,8 @@ export async function finalizeFileSubmission({
   phone: string;
   school: string;
   studentId: string;
+  teacher?: string;
+  teacherId?: string;
   category: string;
   fileId: string;
   bucketId: string;
@@ -439,6 +397,8 @@ export async function finalizeFileSubmission({
         tel: phone,
         schoolName: school,
         schoolNum: studentId,
+        teacher: teacher || '',
+        teacherId: teacherId || '',
         videoUrl: '', // required field on the collection; empty string for file submissions
       },
     );
@@ -457,6 +417,8 @@ export async function submitEntry({
   phone,
   school,
   studentId,
+  teacher,
+  teacherId,
   category,
   file,
   videoUrl,
@@ -467,6 +429,8 @@ export async function submitEntry({
   phone: string;
   school: string;
   studentId: string;
+  teacher?: string;
+  teacherId?: string;
   category: string;
   file: File | null;
   videoUrl?: string;
@@ -503,6 +467,8 @@ export async function submitEntry({
           tel: phone,
           schoolName: school,
           schoolNum: studentId,
+          teacher: teacher || '',
+          teacherId: teacherId || '',
           videoUrl: normalizedVideoUrl,
         }
       );

@@ -131,24 +131,15 @@ async function fetchChunkWithRetry(
         if (json?.message) parsedMessage = json.message;
       } catch { /* not JSON */ }
 
-      let parsedType: string | undefined;
-      try { parsedType = JSON.parse(body)?.type; } catch { /* not JSON */ }
-
       const err = {
         message: parsedMessage || response.statusText,
         code: response.status,
-        type: parsedType,
+        type: (() => { try { return JSON.parse(body)?.type; } catch { return undefined; } })(),
       };
 
       // Non-retriable errors (4xx except 499): propagate immediately, no point in retrying
       const retriable = response.status === 499 || response.status === 502 || response.status === 503 || response.status === 504;
       if (!retriable) {
-        console.error('[Appwrite] Upload failed (non-retriable):', {
-          status: response.status,
-          type: parsedType,
-          message: parsedMessage,
-          range: `${start}-${end - 1}/${totalSize}`,
-        });
         throw err;
       }
 
@@ -314,13 +305,6 @@ function normalizeSubmissionError(error: unknown): Error {
 
     if (appwriteError.code === 403) {
       return new Error(`文件上传被拒绝 (403)：存储桶权限不足，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
-    }
-
-    if (appwriteError.code === 500) {
-      return new Error(
-        `文件上传服务器内部错误 (500)：${appwriteError.message || '未知错误'}。` +
-        `请检查：① Appwrite Storage 磁盘/对象存储是否正常；② 存储桶是否设置了文件类型白名单（不包含当前文件扩展名）；③ 存储桶最大文件大小限制。Appwrite 类型：${appwriteError.type || '未知'}`
-      );
     }
 
     if (appwriteError.code === 499 || appwriteError.message.includes('Client Closed Request')) {

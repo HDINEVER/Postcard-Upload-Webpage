@@ -185,7 +185,7 @@ async function fetchChunkWithRetry(
 
   // Preserve the original error so normalizeSubmissionError can decode it
   if (lastError !== undefined) throw lastError;
-  throw new Error(`分块上传失败: ${start}-${end - 1}/${totalSize}`);
+  throw new Error(`分块上传失败：${start}-${end - 1}/${totalSize}`);
 }
 
 /**
@@ -282,7 +282,7 @@ async function uploadFileChunked(
 function assertAppwriteConfigured() {
   if (!isAppwriteConfigured || !databases || !storage) {
     throw new Error(
-      `Appwrite 未配置完整，请在 .env 中补齐以下变量: ${missingEnvKeys.join(', ')}`
+      `Appwrite 未配置完整，请在 .env 中补齐以下变量：${missingEnvKeys.join(', ')}`
     );
   }
 }
@@ -575,7 +575,7 @@ export async function submitEntry({
 export function getFileDownloadUrl(fileId: string, bucketId: string): string {
   if (!isAppwriteConfigured) {
     throw new Error(
-      `Appwrite 未配置完整，请在 .env 中补齐以下变量: ${missingEnvKeys.join(', ')}`
+      `Appwrite 未配置完整，请在 .env 中补齐以下变量：${missingEnvKeys.join(', ')}`
     );
   }
   return `${configuredEndpoint}/storage/buckets/${bucketId}/files/${fileId}/download`;

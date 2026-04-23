@@ -1,574 +1,585 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { Client, Databases, Storage, ID } from 'appwrite';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Upload, X, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
-import gsap from 'gsap';
-import confetti from 'canvas-confetti';
-import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
+const configuredEndpoint = (
+  import.meta.env.VITE_APPWRITE_URL ||
+  import.meta.env.VITE_APPWRITE_ENDPOINT ||
+  'https://appwrite1.hdinever.top/v1'
+).trim();
 
+const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+const isLocalDevHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
+// In local development, route SDK traffic through Vite proxy (/v1) to avoid browser CORS variance.
+const effectiveEndpoint = isLocalDevHost && browserOrigin ? `${browserOrigin}/v1` : configuredEndpoint;
 
-const FILE_RULES: Record<string, { accept: string; label: string }> = {
-  postcard: {
-    accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
-    label: '支持 JPG、PNG 图片文件',
-  },
-  presentation: {
-    accept: '.ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    label: '支持 PPT、PPTX、PDF 文档文件',
-  },
-  video: {
-    accept: '',
-    label: '请粘贴网盘链接（百度云/夸克等）',
+const appwriteConfig = {
+  endpoint: effectiveEndpoint,
+  projectId: (import.meta.env.VITE_APPWRITE_PROJECT_ID || '69dc5b0700295f5740d0').trim(),
+  databaseId: (import.meta.env.VITE_APPWRITE_DATABASE_ID || '69de43e100124b512cbb').trim(),
+  collectionId: (import.meta.env.VITE_APPWRITE_COLLECTION_ID || 'project').trim(),
+  bucketId: (import.meta.env.VITE_APPWRITE_BUCKET_ID || '').trim(),
+  bucketIds: {
+    video: (import.meta.env.VITE_APPWRITE_BUCKET_VIDEO || '69e1b6c80005490899cc').trim(),
+    presentation: (import.meta.env.VITE_APPWRITE_BUCKET_PPT || '69df430100088d621422').trim(),
+    postcard: (import.meta.env.VITE_APPWRITE_BUCKET_POSTCARD || '69df42a60004a562ba07').trim(),
   },
 };
 
-type CategoryKey = 'postcard' | 'presentation' | 'video';
+const missingEnvKeys = [
+  ['VITE_APPWRITE_URL 或 VITE_APPWRITE_ENDPOINT', configuredEndpoint],
+  ['VITE_APPWRITE_PROJECT_ID', appwriteConfig.projectId],
+  ['VITE_APPWRITE_DATABASE_ID', appwriteConfig.databaseId],
+  ['VITE_APPWRITE_COLLECTION_ID', appwriteConfig.collectionId],
+  ['VITE_APPWRITE_BUCKET_VIDEO', appwriteConfig.bucketIds.video],
+  ['VITE_APPWRITE_BUCKET_PPT', appwriteConfig.bucketIds.presentation],
+  ['VITE_APPWRITE_BUCKET_POSTCARD', appwriteConfig.bucketIds.postcard],
+]
+  .filter(([, value]) => !value)
+  .map(([key]) => key as string);
 
-type FormState = {
+const isAppwriteConfigured = missingEnvKeys.length === 0;
+
+// Avoid hard crash on app boot when env is missing.
+const client = new Client();
+if (isAppwriteConfigured) {
+  client.setEndpoint(appwriteConfig.endpoint).setProject(appwriteConfig.projectId);
+
+  if (isLocalDevHost) {
+    console.info('[Appwrite] Local dev proxy enabled:', {
+      configuredEndpoint,
+      effectiveEndpoint: appwriteConfig.endpoint,
+      origin: browserOrigin,
+    });
+  }
+}
+
+// Initialize services
+export const databases = isAppwriteConfigured ? new Databases(client) : null;
+export const storage = isAppwriteConfigured ? new Storage(client) : null;
+
+// Export configuration constants
+export const config = {
+  databaseId: appwriteConfig.databaseId,
+  collectionId: appwriteConfig.collectionId,
+  bucketId: appwriteConfig.bucketId,
+  bucketIds: appwriteConfig.bucketIds,
+};
+
+const categoryToBucketId: Record<string, string> = {
+  video: appwriteConfig.bucketIds.video,
+  presentation: appwriteConfig.bucketIds.presentation,
+  postcard: appwriteConfig.bucketIds.postcard,
+};
+
+// 2 MB per chunk — balances speed (~8 requests for 15 MB) and reliability:
+// each chunk at 2 Mbps takes ~8 s, well under Cloudflare's 100 s proxy timeout.
+// (500 KB = 30 requests; 5 MB = 3 requests but triggers CF 499 on slow connections)
+const UPLOAD_CHUNK_SIZE = 2 * 1024 * 1024;
+const CHUNK_REQUEST_TIMEOUT_MS = 120_000;
+const MAX_CHUNK_RETRIES = 4;
+const BASE_RETRY_DELAY_MS = 1_500;
+
+// Base headers that mirror the Appwrite Web SDK (v24.1.1) — required for
+// Appwrite 1.9.x to parse responses correctly. Missing X-Appwrite-Response-Format
+// causes the server to fall back to an older wire format that breaks error handling.
+const APPWRITE_SDK_HEADERS: Record<string, string> = {
+  'x-sdk-name': 'Web',
+  'x-sdk-platform': 'client',
+  'x-sdk-language': 'web',
+  'x-sdk-version': '24.1.1',
+  'X-Appwrite-Response-Format': '1.9.0',
+};
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchChunkWithRetry(
+  url: string,
+  headers: Record<string, string>,
+  form: FormData,
+  start: number,
+  end: number,
+  totalSize: number,
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_CHUNK_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CHUNK_REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: form,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (response.status === 200 || response.status === 201) {
+        return response;
+      }
+
+      const body = await response.text().catch(() => '');
+      let parsedMessage = body;
+      try {
+        const json = JSON.parse(body);
+        if (json?.message) parsedMessage = json.message;
+      } catch { /* not JSON */ }
+
+      let parsedType: string | undefined;
+      try { parsedType = JSON.parse(body)?.type; } catch { /* not JSON */ }
+
+      const err = {
+        message: parsedMessage || response.statusText,
+        code: response.status,
+        type: parsedType,
+      };
+
+      // Non-retriable errors (4xx except 499): propagate immediately, no point in retrying
+      const retriable = response.status === 499 || response.status === 502 || response.status === 503 || response.status === 504;
+      if (!retriable) {
+        console.error('[Appwrite] Upload failed (non-retriable):', {
+          status: response.status,
+          type: parsedType,
+          message: parsedMessage,
+          range: `${start}-${end - 1}/${totalSize}`,
+        });
+        throw err;
+      }
+
+      lastError = err;
+      if (attempt === MAX_CHUNK_RETRIES) {
+        break;
+      }
+    } catch (error) {
+      clearTimeout(timeout);
+      // If this is our own non-retriable throw, propagate it immediately
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        typeof (error as { code: unknown }).code === 'number'
+      ) {
+        throw error;
+      }
+      lastError = error;
+      if (attempt === MAX_CHUNK_RETRIES) {
+        break;
+      }
+    }
+
+    const delayMs = BASE_RETRY_DELAY_MS * attempt;
+    console.warn('[Appwrite] Chunk upload retry', {
+      attempt,
+      maxRetries: MAX_CHUNK_RETRIES,
+      range: `${start}-${end - 1}/${totalSize}`,
+      delayMs,
+    });
+    await sleep(delayMs);
+  }
+
+  // Preserve the original error so normalizeSubmissionError can decode it
+  if (lastError !== undefined) throw lastError;
+  throw new Error(`分块上传失败：${start}-${end - 1}/${totalSize}`);
+}
+
+/**
+ * Upload a file to an Appwrite storage bucket using small chunks.
+ * Falls back to a single-request upload for files at or below UPLOAD_CHUNK_SIZE.
+ * Uses the Appwrite REST API directly (Content-Range + X-Appwrite-ID) so we control chunk size
+ * independently of the SDK's hardcoded 5 MB threshold.
+ * @param displayFileName Optional: custom filename to use in storage (defaults to original file.name)
+ */
+async function uploadFileChunked(
+  bucketId: string,
+  fileId: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+  displayFileName?: string,
+): Promise<Record<string, unknown>> {
+  const endpoint = appwriteConfig.endpoint;
+  const projectId = appwriteConfig.projectId;
+  const totalSize = file.size;
+  const url = `${endpoint}/storage/buckets/${bucketId}/files`;
+  const fileName = displayFileName || file.name;
+
+  if (totalSize === 0) {
+    throw new Error('文件大小为 0，请重新选择文件');
+  }
+
+  // Shared base headers — always sent, matches Appwrite Web SDK v24.1.1
+  const baseHeaders: Record<string, string> = {
+    ...APPWRITE_SDK_HEADERS,
+    'X-Appwrite-Project': projectId,
+  };
+
+  // Small file — single request, no Content-Range needed
+  if (totalSize <= UPLOAD_CHUNK_SIZE) {
+    const form = new FormData();
+    form.append('fileId', fileId);
+    form.append('file', new File([file], fileName, { type: file.type || 'application/octet-stream' }));
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: baseHeaders,
+      body: form,
+    });
+    if (!res.ok) {
+      throw await res.json().catch(() => ({ message: res.statusText, code: res.status }));
+    }
+    onProgress?.(100);
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  // Multi-chunk upload.
+  // Following the SDK pattern exactly:
+  //   - First chunk: send fileId in the form body, no x-appwrite-id header
+  //   - After first response: extract $id and include x-appwrite-id for every subsequent chunk
+  let fileObj: Record<string, unknown> | null = null;
+  let uploadedFileId: string | null = null;
+
+  for (let start = 0; start < totalSize; start += UPLOAD_CHUNK_SIZE) {
+    const end = Math.min(start + UPLOAD_CHUNK_SIZE, totalSize);
+    const chunk = file.slice(start, end);
+
+    const form = new FormData();
+    form.append('fileId', fileId);
+    form.append('file', new File([chunk], fileName, { type: file.type || 'application/octet-stream' }));
+
+    // content-range (lowercase) matches the SDK's exact header name.
+    // x-appwrite-id is only added for chunks after the first, using the $id
+    // returned by the server — this is the authoritative session identifier.
+    const headers: Record<string, string> = {
+      ...baseHeaders,
+      'content-range': `bytes ${start}-${end - 1}/${totalSize}`,
+    };
+    if (uploadedFileId) {
+      headers['x-appwrite-id'] = uploadedFileId;
+    }
+
+    const res = await fetchChunkWithRetry(url, headers, form, start, end, totalSize);
+    onProgress?.(Math.round((end / totalSize) * 100));
+
+    const chunkData = await res.json().catch(() => null) as Record<string, unknown> | null;
+    // After the first successful chunk the server returns the canonical $id;
+    // capture it immediately so every subsequent chunk carries x-appwrite-id.
+    if (chunkData && typeof chunkData['$id'] === 'string') {
+      uploadedFileId = chunkData['$id'] as string;
+    }
+    fileObj = chunkData;
+  }
+
+  if (!fileObj) {
+    throw new Error('上传完成但服务器未返回文件信息');
+  }
+  return fileObj;
+}
+
+function assertAppwriteConfigured() {
+  if (!isAppwriteConfigured || !databases || !storage) {
+    throw new Error(
+      `Appwrite 未配置完整，请在 .env 中补齐以下变量：${missingEnvKeys.join(', ')}`
+    );
+  }
+}
+
+function normalizeSubmissionError(error: unknown): Error {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    const appwriteError = error as { message: string; code?: number; type?: string };
+
+    if (appwriteError.type === 'document_invalid_structure') {
+      if (appwriteError.message.includes('schoolName')) {
+        return new Error('提交失败：所选学校与 Appwrite 集合允许值不一致，请重新选择学校后再试。');
+      }
+
+      return new Error(`提交失败：${appwriteError.message}`);
+    }
+
+    if (appwriteError.code === 404 && appwriteError.type === 'general_route_not_found') {
+      return new Error('提交失败：Appwrite 文档接口未找到，请检查 Database ID、Collection ID 以及当前接口路径是否与服务端版本一致。');
+    }
+
+    if (appwriteError.code === 401) {
+      return new Error(`文件上传被拒绝 (401)：存储桶未授权当前用户上传，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
+    }
+
+    if (appwriteError.code === 403) {
+      return new Error(`文件上传被拒绝 (403)：存储桶权限不足，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
+    }
+
+    if (appwriteError.code === 500) {
+      return new Error(
+        `文件上传服务器内部错误 (500)：${appwriteError.message || '未知错误'}。` +
+        `请检查：① Appwrite Storage 磁盘/对象存储是否正常；② 存储桶是否设置了文件类型白名单（不包含当前文件扩展名）；③ 存储桶最大文件大小限制。Appwrite 类型：${appwriteError.type || '未知'}`
+      );
+    }
+
+    if (appwriteError.code === 499 || appwriteError.message.includes('Client Closed Request')) {
+      return new Error(
+        '上传超时：文件分块上传时服务器关闭了连接。请尝试上传较小的文件（建议不超过 50 MB），或联系管理员检查 Cloudflare 代理超时与上传带宽配置。'
+      );
+    }
+  }
+
+  if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+    return new Error(
+      '无法连接到 Appwrite 接口。请先检查 1) Appwrite 域名是否可直接访问 /v1/health，2) 是否被 Cloudflare Access、WAF 或登录保护拦截，3) Appwrite Platforms/CORS 是否已放行当前域名。浏览器直连 Appwrite 不需要 API Key。'
+    );
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error('提交失败，请检查 Appwrite 配置与网络连通性');
+}
+
+function sanitizeFileNamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|\s]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Upload a file to the appropriate bucket immediately when selected (pre-upload pattern).
+ * Call this as soon as the user picks a file so the upload runs while they fill the form.
+ * Returns { fileId, bucketId } on success for later reference.
+ */
+export async function startFileUpload(
+  category: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+  name?: string,
+  studentId?: string,
+): Promise<{ fileId: string; bucketId: string; displayFileName: string }> {
+  try {
+    assertAppwriteConfigured();
+    const selectedBucketId = categoryToBucketId[category];
+    if (!selectedBucketId) {
+      throw new Error('参赛类别无效，请重新选择');
+    }
+    if (file.size === 0) {
+      throw new Error('文件大小为 0，请重新选择文件');
+    }
+    const fileId = ID.unique();
+    const fileExtension = file.name.split('.').pop() || 'bin';
+    let displayFileName: string;
+    if (name && studentId) {
+      const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
+      const safeName = sanitizeFileNamePart(name) || 'anonymous';
+      displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
+    } else {
+      displayFileName = file.name;
+    }
+    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, displayFileName);
+    console.info('[Appwrite] Pre-upload complete:', { fileId, displayFileName });
+    return { fileId, bucketId: selectedBucketId, displayFileName };
+  } catch (error) {
+    throw normalizeSubmissionError(error);
+  }
+}
+
+/**
+ * Called at form-submit time (after pre-upload) when we finally have name + studentId.
+ * 1. Renames the already-uploaded file to `{studentId}_{name}_{category}.{ext}`.
+ * 2. Creates a DB document using the same ID as the storage file — so the DB row's
+ *    `$id` always matches the bucket file's `$id`, enabling one-click correlation on export.
+ */
+export async function finalizeFileSubmission({
+  name,
+  phone,
+  school,
+  studentId,
+  category,
+  fileId,
+  bucketId,
+  originalFileName,
+  onProgress,
+}: {
   name: string;
   phone: string;
   school: string;
   studentId: string;
-  teacher: string;
-  category: CategoryKey;
+  category: string;
+  fileId: string;
+  bucketId: string;
+  originalFileName: string;
+  onProgress?: (pct: number) => void;
+}) {
+  try {
+    assertAppwriteConfigured();
+
+    const fileExtension = originalFileName.split('.').pop() || 'bin';
+    const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
+    const safeName = sanitizeFileNamePart(name) || 'anonymous';
+    const displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
+
+    onProgress?.(50);
+
+    // Create DB document with the same ID as the file so they are permanently linked.
+    // (Rename via storage.updateFile is skipped: guest users only have create permission,
+    //  not update — the file is already named correctly at upload time via startFileUpload.)
+    const entry = await databases!.createDocument(
+      config.databaseId,
+      config.collectionId,
+      fileId, // use fileId as document ID for 1:1 linkage
+      {
+        name,
+        tel: phone,
+        schoolName: school,
+        schoolNum: studentId,
+        videoUrl: '', // required field on the collection; empty string for file submissions
+      },
+    );
+
+    console.info('[Appwrite] DB record created:', { entryId: entry.$id, fileId, displayFileName });
+    onProgress?.(100);
+    return { success: true, entry };
+  } catch (error) {
+    throw normalizeSubmissionError(error);
+  }
+}
+
+// Helper function to upload submission
+export async function submitEntry({
+  name,
+  phone,
+  school,
+  studentId,
+  category,
+  file,
+  videoUrl,
+  onProgress,
+  onStageChange,
+}: {
+  name: string;
+  phone: string;
+  school: string;
+  studentId: string;
+  category: string;
+  file: File | null;
   videoUrl?: string;
-};
+  onProgress?: (progress: number) => void;
+  onStageChange?: (stage: 'uploading' | 'saving') => void;
+}) {
+  try {
+    assertAppwriteConfigured();
+    const entryId = ID.unique();
 
-type UploadStage = 'uploading' | 'saving';
+    // For video category, skip file upload and go straight to saving link
+    if (category === 'video') {
+      onStageChange?.('saving');
+      onProgress?.(50);
 
-type PreUploadState = {
-  status: 'idle' | 'uploading' | 'done' | 'error';
-  progress: number;
-  fileId: string | null;
-  bucketId: string | null;
-  error: string | null;
-};
-
-const EMPTY_PRE_UPLOAD: PreUploadState = {
-  status: 'idle',
-  progress: 0,
-  fileId: null,
-  bucketId: null,
-  error: null,
-};
-
-const FloatingCard = ({ children, className, style, delay = 0 }: any) => {
-  const floatRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.to(floatRef.current, {
-        y: -20,
-        rotation: style.rotate + 5,
-        duration: 3,
-        yoyo: true,
-        repeat: -1,
-        ease: "sine.inOut",
-        delay: delay,
-      });
-    });
-    return () => ctx.revert();
-  }, [style.rotate, delay]);
-
-  return (
-    <div className={`absolute z-0 hover:z-50 pointer-events-auto ${className}`}>
-      <div ref={floatRef} className="w-full h-full" style={{ transform: `rotate(${style.rotate}deg)` }}>
-        <motion.div
-          className="w-full h-full rounded-2xl shadow-xl border border-zinc-100/50 bg-white/80 backdrop-blur-sm p-2 cursor-pointer group"
-          whileHover={{
-            scale: 1.15,
-            boxShadow: "0 25px 50px -12px rgba(249, 115, 22, 0.3)",
-            borderColor: "rgba(249, 115, 22, 0.5)",
-            transition: { type: "spring", stiffness: 300, damping: 15 }
-          }}
-          whileTap={{ 
-            scale: 0.9, 
-            transition: { type: "spring", stiffness: 300, damping: 15 } 
-          }}
-        >
-          {children}
-        </motion.div>
-      </div>
-    </div>
-  );
-};
-
-const FloatingCards = () => {
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-      {/* Top Left */}
-      <FloatingCard className="w-32 h-24 md:w-48 md:h-32 left-[-2%] md:left-[4%] top-[5%] md:top-[8%]" style={{ rotate: -12 }} delay={0}>
-        <div className="w-full h-full bg-white rounded-xl border border-zinc-100 flex items-center justify-center shadow-sm overflow-hidden">
-          <svg viewBox="0 0 100 60" className="w-2/3 h-2/3 text-orange-500 group-hover:scale-125 transition-transform duration-500 ease-out">
-            <ellipse cx="50" cy="30" rx="40" ry="20" fill="none" stroke="currentColor" strokeWidth="4"/>
-            <circle cx="50" cy="30" r="12" fill="currentColor"/>
-          </svg>
-        </div>
-      </FloatingCard>
-
-      {/* Top Right */}
-      <FloatingCard className="w-28 h-20 md:w-40 md:h-28 right-[-2%] md:right-[4%] top-[8%] md:top-[12%]" style={{ rotate: 15 }} delay={1}>
-        <div className="w-full h-full bg-zinc-900 rounded-xl flex items-center justify-center shadow-md overflow-hidden">
-          <svg viewBox="0 0 100 60" className="w-2/3 h-2/3 group-hover:-translate-y-2 group-hover:scale-110 transition-transform duration-500 ease-out">
-            <path d="M10,30 Q30,10 50,30 T90,30" fill="none" stroke="#f97316" strokeWidth="4"/>
-            <circle cx="10" cy="30" r="6" fill="#f97316"/>
-            <circle cx="50" cy="30" r="6" fill="#f97316"/>
-            <circle cx="90" cy="30" r="6" fill="#f97316"/>
-          </svg>
-        </div>
-      </FloatingCard>
-
-      {/* Bottom Left */}
-      <FloatingCard className="w-36 h-24 md:w-52 md:h-36 left-[2%] md:left-[6%] bottom-[10%] md:bottom-[12%]" style={{ rotate: 8 }} delay={0.5}>
-        <div className="w-full h-full bg-white rounded-xl border border-zinc-100 flex items-center justify-center shadow-sm overflow-hidden relative">
-           <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-orange-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out"></div>
-           <div className="absolute -right-4 -top-4 w-20 h-20 bg-zinc-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out delay-75"></div>
-           <div className="w-16 h-16 bg-zinc-900 rounded-full z-10 flex items-center justify-center group-hover:scale-110 group-hover:rotate-180 transition-all duration-500 ease-out">
-              <div className="w-4 h-4 bg-orange-500 rounded-full"></div>
-           </div>
-        </div>
-      </FloatingCard>
-
-      {/* Bottom Right */}
-      <FloatingCard className="w-32 h-24 md:w-48 md:h-32 right-[2%] md:right-[5%] bottom-[5%] md:bottom-[10%]" style={{ rotate: -6 }} delay={1.5}>
-        <div className="w-full h-full bg-orange-500 rounded-xl flex items-center justify-center shadow-md overflow-hidden">
-           <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 text-white group-hover:rotate-[120deg] group-hover:scale-110 transition-all duration-700 ease-out">
-              <polygon points="50,10 90,90 10,90" fill="currentColor"/>
-              <circle cx="50" cy="65" r="12" fill="#f97316"/>
-           </svg>
-        </div>
-      </FloatingCard>
-      
-      {/* Center Left (small) */}
-      <FloatingCard className="w-20 h-20 md:w-28 md:h-28 left-[-5%] md:left-[2%] top-[45%] hidden sm:block" style={{ rotate: -25 }} delay={2}>
-        <div className="w-full h-full bg-white rounded-xl border border-zinc-100 flex items-center justify-center shadow-sm overflow-hidden">
-           <div className="w-10 h-10 border-4 border-zinc-900 rounded-sm rotate-12 group-hover:rotate-[135deg] group-hover:scale-125 group-hover:border-orange-500 transition-all duration-500 ease-out"></div>
-        </div>
-      </FloatingCard>
-
-      {/* Center Right (small) */}
-      <FloatingCard className="w-24 h-16 md:w-36 md:h-24 right-[-5%] md:right-[2%] top-[50%] hidden sm:block" style={{ rotate: 20 }} delay={0.8}>
-        <div className="w-full h-full bg-white rounded-xl border border-zinc-100 flex items-center justify-center shadow-sm overflow-hidden">
-           <div className="w-full h-3 bg-zinc-100 mx-6 rounded-full relative overflow-hidden group-hover:h-6 transition-all duration-300 ease-out">
-              <motion.div 
-                className="absolute left-0 top-0 h-full bg-orange-500 rounded-full"
-                animate={{ width: ['20%', '80%', '20%'] }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-              />
-           </div>
-        </div>
-      </FloatingCard>
-    </div>
-  );
-};
-
-function SubmitModal({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState(1);
-  const [file, setFile] = useState<File | null>(null);
-  const [filesByCategory, setFilesByCategory] = useState<Record<CategoryKey, File | null>>({
-    postcard: null,
-    presentation: null,
-    video: null,
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStage, setUploadStage] = useState<UploadStage>('uploading');
-  const [preUploadByCategory, setPreUploadByCategory] = useState<Record<CategoryKey, PreUploadState>>({
-    postcard: { ...EMPTY_PRE_UPLOAD },
-    presentation: { ...EMPTY_PRE_UPLOAD },
-    video: { ...EMPTY_PRE_UPLOAD },
-  });
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState<FormState>({
-    name: '',
-    phone: '',
-    school: '',
-    studentId: '',
-    teacher: '',
-    category: 'postcard',
-    videoUrl: '',
-  });
-
-  useEffect(() => {
-    if (step === 3) {
-      // Trigger confetti from both edges
-      const duration = 2.5 * 1000;
-      const end = Date.now() + duration;
-      const colors = ['#f97316', '#fb923c', '#fdba74', '#10b981', '#22c55e', '#3b82f6', '#f43f5e'];
-
-      (function frame() {
-        confetti({
-          particleCount: 5,
-          angle: 60,
-          spread: 55,
-          origin: { x: 0 },
-          colors: colors
-        });
-        confetti({
-          particleCount: 5,
-          angle: 120,
-          spread: 55,
-          origin: { x: 1 },
-          colors: colors
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      }());
-    }
-  }, [step]);
-
-  useEffect(() => {
-    if (!loading || step !== 2) {
-      return;
-    }
-
-    const progressCap = uploadStage === 'uploading' ? 88 : 96;
-    const timer = window.setInterval(() => {
-      setUploadProgress((current) => {
-        if (current >= progressCap) {
-          return current;
-        }
-
-        if (current < 20) {
-          return Math.min(current + 4, progressCap);
-        }
-
-        if (current < 60) {
-          return Math.min(current + 2, progressCap);
-        }
-
-        return Math.min(current + 1, progressCap);
-      });
-    }, 180);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [loading, step, uploadStage]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    const nextValue =
-      name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
-    setFormData(prev => ({ ...prev, [name]: nextValue }));
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const nextCategory = e.target.value as CategoryKey;
-    setFormData(prev => ({ 
-      ...prev, 
-      category: nextCategory,
-      // Clear videoUrl when switching away from video category
-      videoUrl: nextCategory === 'video' ? prev.videoUrl : '',
-    }));
-    setFile(filesByCategory[nextCategory]);
-    setError(null);
-    setIsDragging(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const currentFileRule = FILE_RULES[formData.category] ?? FILE_RULES.postcard;
-  const preUpload = preUploadByCategory[formData.category];
-
-  const isFileAccepted = (selectedFile: File) => {
-    const acceptedItems = currentFileRule.accept
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-
-    const fileName = selectedFile.name.toLowerCase();
-    const fileType = selectedFile.type.toLowerCase();
-
-    return acceptedItems.some((item) => {
-      if (item.startsWith('.')) {
-        return fileName.endsWith(item);
+      if (!videoUrl || videoUrl.trim() === '') {
+        throw new Error('视频网盘链接不能为空');
       }
-      return fileType === item;
-    });
-  };
 
-  const assignFile = (selectedFile: File | null) => {
-    if (!selectedFile) {
-      return;
+      const normalizedVideoUrl = videoUrl.trim();
+
+      console.info('[Appwrite] Saving video link:', {
+        rawVideoUrl: videoUrl,
+        normalizedVideoUrl,
+      });
+
+      // Create database entry with video link
+      const entry = await databases!.createDocument(
+        config.databaseId,
+        config.collectionId,
+        entryId,
+        {
+          name,
+          tel: phone,
+          schoolName: school,
+          schoolNum: studentId,
+          videoUrl: normalizedVideoUrl,
+        }
+      );
+
+      console.info('[Appwrite] Video entry created:', {
+        entryId: entry.$id,
+      });
+
+      onProgress?.(100);
+      return { success: true, entry, file: null, bucketId: null, school };
     }
 
-    if (!isFileAccepted(selectedFile)) {
-      setFile(null);
-      setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-      setPreUploadByCategory((prev) => ({ ...prev, [formData.category]: { ...EMPTY_PRE_UPLOAD } }));
-      setError(`当前类别文件格式不正确，${currentFileRule.label}`);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      return;
+    // For file-based categories (postcard, presentation)
+    if (!file) {
+      throw new Error('文件不能为空');
     }
 
-    setError(null);
-    setFile(selectedFile);
-    setFilesByCategory((prev) => ({ ...prev, [formData.category]: selectedFile }));
+    const selectedBucketId = categoryToBucketId[category];
+    if (!selectedBucketId) {
+      throw new Error('参赛类别无效，请重新选择');
+    }
 
-    // Immediately start uploading while the user fills the rest of the form.
-    // Pass name+studentId if already filled so the file is stored with the correct name.
-    const category = formData.category;
-    const currentName = formData.name.trim();
-    const currentStudentId = formData.studentId.trim();
-    setPreUploadByCategory((prev) => ({
-      ...prev,
-      [category]: { status: 'uploading', progress: 0, fileId: null, bucketId: null, error: null },
-    }));
-    startFileUpload(
+    // Generate standardized filename for uploader traceability.
+    const fileExtension = file.name.split('.').pop() || 'bin';
+    const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
+    const safeName = sanitizeFileNamePart(name) || 'anonymous';
+    const displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
+
+    console.info('[Appwrite] Upload start:', {
       category,
-      selectedFile,
-      (pct) =>
-        setPreUploadByCategory((prev) => ({
-          ...prev,
-          [category]: { ...prev[category], progress: pct },
-        })),
-      currentName || undefined,
-      currentStudentId || undefined,
-    )
-      .then(({ fileId, bucketId }) => {
-        setPreUploadByCategory((prev) => ({
-          ...prev,
-          [category]: { status: 'done', progress: 100, fileId, bucketId, error: null },
-        }));
-      })
-      .catch((err: unknown) => {
-        const errMsg = err instanceof Error ? err.message : '文件上传失败，请重新选择文件并重试';
-        setPreUploadByCategory((prev) => ({
-          ...prev,
-          [category]: { status: 'error', progress: 0, fileId: null, bucketId: null, error: errMsg },
-        }));
-      });
-  };
+      selectedBucketId,
+      endpoint: appwriteConfig.endpoint,
+      origin: browserOrigin || 'unknown',
+      originalFileName: file.name,
+      displayFileName,
+      fileType: file.type || 'unknown',
+      fileSize: file.size,
+    });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    assignFile(e.target.files?.[0] || null);
-  };
+    // Use the same ID for both storage file and database row so they can be linked reliably.
+    const fileId = entryId;
+    onStageChange?.('uploading');
+    const uploadedFile = await uploadFileChunked(
+      selectedBucketId,
+      fileId,
+      file,
+      (pct) => onProgress?.(pct),
+      displayFileName,
+    );
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    assignFile(e.dataTransfer.files?.[0] ?? null);
-  };
+    onStageChange?.('saving');
+    onProgress?.(95);
 
-  const openFilePicker = () => {
-    fileInputRef.current?.click();
-  };
+    console.info('[Appwrite] File upload complete:', {
+      uploadedFile,
+      fileId: (uploadedFile as any)?.$id,
+      displayFileName,
+    });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    let normalizedVideoUrl: string | undefined;
-    
-    // Validation
-    if (!formData.name || !formData.phone || !formData.school || !formData.studentId) {
-      setError('请填写所有必需的字段');
-      return;
-    }
+    // For postcard/presentation, finish after successful bucket upload.
+    return { success: true, entry: null, file: uploadedFile, bucketId: selectedBucketId, school };
+  } catch (error) {
+    const normalizedError = normalizeSubmissionError(error);
+    console.error('Submission error:', normalizedError);
+    throw normalizedError;
+  }
+}
 
-    if (!/^\d{11}$/.test(formData.phone.trim())) {
-      setError('请输入11位手机号');
-      return;
-    }
-
-    if (formData.category === 'video') {
-      if (!formData.videoUrl || formData.videoUrl.trim() === '') {
-        setError('请粘贴网盘链接');
-        return;
-      }
-
-      normalizedVideoUrl = formData.videoUrl.trim();
-
-      console.log('[Submit] Video category - extractedUrl:', normalizedVideoUrl);
-    } else {
-      if (!file) {
-        setError('请选择文件');
-        return;
-      }
-      if (preUpload.status === 'uploading') {
-        setError('文件正在上传中，请稍候再提交');
-        return;
-      }
-      if (preUpload.status !== 'done' || !preUpload.fileId) {
-        setError(preUpload.error || '文件上传失败，请重新选择文件并重试');
-        return;
-      }
-      // File already pre-uploaded — finalize: rename file + write DB record
-      setError(null);
-      setLoading(true);
-      setUploadStage('saving');
-      setUploadProgress(10);
-      setStep(2);
-
-      try {
-        await finalizeFileSubmission({
-          name: formData.name,
-          phone: formData.phone,
-          school: formData.school,
-          studentId: formData.studentId,
-          category: formData.category,
-          fileId: preUpload.fileId,
-          bucketId: preUpload.bucketId!,
-          originalFileName: file.name,
-          onProgress: (pct) => setUploadProgress((curr) => Math.max(curr, pct)),
-        });
-        setUploadProgress(100);
-        setStep(3);
-        setLoading(false);
-      } catch (err) {
-        setLoading(false);
-        setUploadProgress(0);
-        setUploadStage('saving');
-        setStep(1);
-        setError(err instanceof Error ? err.message : '提交失败，请重试');
-        console.error('Submit error:', err);
-      }
-      return;
-    }
-
-    // Video category: save the link to the database (file categories returned early above)
-    setError(null);
-    setLoading(true);
-    setUploadStage('saving');
-    setUploadProgress(10);
-    setStep(2);
-
-    try {
-      await submitEntry({
-        name: formData.name,
-        phone: formData.phone,
-        school: formData.school,
-        studentId: formData.studentId,
-        category: formData.category,
-        file: null,
-        videoUrl: normalizedVideoUrl,
-        onProgress: (progress) => {
-          setUploadProgress((current) => Math.max(current, Math.round(progress)));
-        },
-        onStageChange: (nextStage) => {
-          setUploadStage(nextStage);
-        },
-      });
-
-      setUploadProgress(100);
-      setStep(3);
-      setLoading(false);
-    } catch (err) {
-      setLoading(false);
-      setUploadProgress(0);
-      setUploadStage('saving');
-      setStep(1);
-      setError(err instanceof Error ? err.message : '提交失败，请重试');
-      console.error('Submit error:', err);
-    }
-  };
-
-  const progressLabel = `${Math.round(uploadProgress)}%`;
-  const progressTitle = uploadStage === 'uploading' ? '正在上传作品' : '正在保存报名信息';
-  const progressDescription =
-    uploadStage === 'uploading'
-      ? '文件上传中，请稍候...'
-      : '文件已上传，正在写入报名信息...';
-  const progressHint =
-    uploadStage === 'uploading'
-      ? '上传完成后会自动进入报名信息保存阶段'
-      : '信息保存完成后会自动显示提交成功弹窗';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-      <motion.div 
-        initial={{ opacity: 0 }} 
-        animate={{ opacity: 1 }} 
-        exit={{ opacity: 0 }} 
-        className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-      >
-        <div className="flex justify-between items-center p-6 border-b border-zinc-100">
-          <h3 className="text-xl font-bold text-zinc-900">提交参赛作品</h3>
-          <button onClick={onClose} className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-full transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto custom-scrollbar">
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex gap-3"
-            >
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-red-700 text-sm font-medium">{error}</p>
-            </motion.div>
-          )}
-          
-          {step === 1 && (
-            <form onSubmit={handleSubmit} className="space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-zinc-900">姓名</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入真实姓名" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-zinc-900">联系电话</label>
-                  <input 
-                    required 
-                    type="tel" 
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    inputMode="numeric"
-                    pattern="[0-9]{11}"
-                    maxLength={11}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入11位手机号码" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="school"
-                    value={formData.school}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入所在学校全称" 
-                  />
-                </div>
-                <div className="space-y-2">
+// Helper function to get file download URL
+export function getFileDownloadUrl(fileId: string, bucketId: string): string {
+  if (!isAppwriteConfigured) {
+    throw new Error(
+      `Appwrite 未配置完整，请在 .env 中补齐以下变量：${missingEnvKeys.join(', ')}`
+    );
+  }
+  return `${configuredEndpoint}/storage/buckets/${bucketId}/files/${fileId}/download`;
+}
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
                   <input 
                     required 
@@ -578,17 +589,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
                     placeholder="请输入学号" 
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-zinc-900">指导教师 <span className="text-zinc-400 font-normal text-xs">（可不填）</span></label>
-                  <input 
-                    type="text" 
-                    name="teacher"
-                    value={formData.teacher}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入指导教师姓名" 
                   />
                 </div>
               </div>
@@ -606,7 +606,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       className="sr-only" 
                     />
                     <span className="flex flex-col">
-                      <span className="block text-sm font-bold text-zinc-900">文创设计</span>
+                      <span className="block text-sm font-bold text-zinc-900">明信片设计</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">图片格式 (JPG/PNG)</span>
                     </span>
                   </label>
@@ -644,14 +644,11 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
 
-                {/* Hint: fill name+phone first so the file gets the correct name in the bucket */}
-                {formData.category !== 'video' && (!formData.name.trim() || !formData.phone.trim()) && (
+                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
+                {formData.category !== 'video' && (!formData.name.trim() || !formData.studentId.trim()) && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    {formData.category === 'postcard'
-                      ? <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称_序号 命名上传</>
-                      : <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称 命名上传</>
-                    }
+                    请先填写<strong>姓名</strong>和<strong>学号</strong>，文件将以「学号_姓名_类别」命名上传
                   </div>
                 )}
                 {formData.category === 'video' ? (
@@ -668,7 +665,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_介绍视频</strong></span>
+                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校 - 姓名 - 学号</strong></span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
@@ -939,7 +936,7 @@ export default function App() {
 
       {/* Header */}
       <header className="relative z-10 flex justify-between items-center p-6 md:p-10">
-        <div className="text-base md:text-xl font-bold tracking-tight text-zinc-800 flex items-center gap-2">
+        <div className="text-sm md:text-base font-bold tracking-tight text-zinc-800 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-orange-500"></div>
           上海市民办高校新联会
         </div>
@@ -977,14 +974,11 @@ export default function App() {
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
-            非遗文化创新作品大赛
+            非遗主题文创产品设计及演示文稿演讲大赛
           </p>
-          <p className="text-sm sm:text-base text-zinc-400 mb-6 tracking-widest">
-            明信片、书签、冰箱贴、徽章、帆布袋等
+          <p className="text-sm sm:text-base text-zinc-400 mb-12 tracking-widest">
+            明信片 · 书签 · 冰筱贴 · 徽章 · 帆布袋
           </p>
-          <div className="inline-block mb-8 px-5 py-2 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-base font-bold tracking-widest">
-            新力量·新传承
-          </div>
 
           <motion.button 
             whileHover={{ scale: 1.05 }}
@@ -1008,12 +1002,12 @@ export default function App() {
           <p><span className="font-semibold text-zinc-500">指导单位：</span>上海市教委民办教育管理处（民办教育综合党委办公室）</p>
           <p><span className="font-semibold text-zinc-500">主办单位：</span>上海市民办高校新的社会阶层人士联谊会</p>
           <p><span className="font-semibold text-zinc-500">承办单位：</span>新联会上海师范大学天华学院分会</p>
-          <p><span className="font-semibold text-zinc-500">协办单位：</span>新联会上海建桥学院分会、上海震旦职业学院分会、上海外国语大学贤达人文学院分会</p>
+          <p><span className="font-semibold text-zinc-500">协办单位：</span>新联会上海建桥学院分会、新联会上海震旦职业学院分会、新联会上海外国语大学贤达人文学院分会</p>
         </div>
         <div className="md:text-right space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">活动时间</p>
-          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026 年 4 月 — 6 月</p>
-          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 31 日 24:00</span></p>
+          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026 年 4 月 — 5 月</p>
+          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 24 日 24:00</span></p>
         </div>
       </footer>
 

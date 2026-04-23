@@ -5,12 +5,17 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Upload, X, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
+import { Upload, X, CheckCircle2, ChevronRight, AlertCircle, ChevronDown } from 'lucide-react';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
-import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
+import { startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
-
+const SCHOOL_OPTIONS = [
+  { label: '上海震旦职业学院', value: '上海震旦职业学院' },
+  { label: '上海外国语大学贤达经济人文学院', value: '上海外国语大学贤达经济人文学院' },
+  { label: '上海建桥学院', value: '上海建桥学院' },
+  { label: '上海师范大学天华学院', value: '上海师范大学天华学院' },
+];
 
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
   postcard: {
@@ -22,8 +27,8 @@ const FILE_RULES: Record<string, { accept: string; label: string }> = {
     label: '支持 PPT、PPTX、PDF 文档文件',
   },
   video: {
-    accept: '',
-    label: '请粘贴网盘链接（百度云/夸克等）',
+    accept: '.mp4,.mov,.avi,.mkv,.zip,.rar,.7z,video/*,application/zip,application/x-rar-compressed,application/x-7z-compressed',
+    label: '支持视频文件 (MP4/MOV/AVI) 或压缩包 (ZIP/RAR)',
   },
 };
 
@@ -34,7 +39,6 @@ type FormState = {
   phone: string;
   school: string;
   studentId: string;
-  teacher: string;
   category: CategoryKey;
   videoUrl?: string;
 };
@@ -191,7 +195,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     phone: '',
     school: '',
     studentId: '',
-    teacher: '',
     category: 'postcard',
     videoUrl: '',
   });
@@ -375,8 +378,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let normalizedVideoUrl: string | undefined;
-    
+
     // Validation
     if (!formData.name || !formData.phone || !formData.school || !formData.studentId) {
       setError('请填写所有必需的字段');
@@ -388,62 +390,20 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    if (formData.category === 'video') {
-      if (!formData.videoUrl || formData.videoUrl.trim() === '') {
-        setError('请粘贴网盘链接');
-        return;
-      }
-
-      normalizedVideoUrl = formData.videoUrl.trim();
-
-      console.log('[Submit] Video category - extractedUrl:', normalizedVideoUrl);
-    } else {
-      if (!file) {
-        setError('请选择文件');
-        return;
-      }
-      if (preUpload.status === 'uploading') {
-        setError('文件正在上传中，请稍候再提交');
-        return;
-      }
-      if (preUpload.status !== 'done' || !preUpload.fileId) {
-        setError(preUpload.error || '文件上传失败，请重新选择文件并重试');
-        return;
-      }
-      // File already pre-uploaded — finalize: rename file + write DB record
-      setError(null);
-      setLoading(true);
-      setUploadStage('saving');
-      setUploadProgress(10);
-      setStep(2);
-
-      try {
-        await finalizeFileSubmission({
-          name: formData.name,
-          phone: formData.phone,
-          school: formData.school,
-          studentId: formData.studentId,
-          category: formData.category,
-          fileId: preUpload.fileId,
-          bucketId: preUpload.bucketId!,
-          originalFileName: file.name,
-          onProgress: (pct) => setUploadProgress((curr) => Math.max(curr, pct)),
-        });
-        setUploadProgress(100);
-        setStep(3);
-        setLoading(false);
-      } catch (err) {
-        setLoading(false);
-        setUploadProgress(0);
-        setUploadStage('saving');
-        setStep(1);
-        setError(err instanceof Error ? err.message : '提交失败，请重试');
-        console.error('Submit error:', err);
-      }
+    if (!file) {
+      setError('请选择文件');
+      return;
+    }
+    if (preUpload.status === 'uploading') {
+      setError('文件正在上传中，请稍候再提交');
+      return;
+    }
+    if (preUpload.status !== 'done' || !preUpload.fileId) {
+      setError(preUpload.error || '文件上传失败，请重新选择文件并重试');
       return;
     }
 
-    // Video category: save the link to the database (file categories returned early above)
+    // File already pre-uploaded — finalize: rename file + write DB record
     setError(null);
     setLoading(true);
     setUploadStage('saving');
@@ -451,22 +411,17 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     setStep(2);
 
     try {
-      await submitEntry({
+      await finalizeFileSubmission({
         name: formData.name,
         phone: formData.phone,
         school: formData.school,
         studentId: formData.studentId,
         category: formData.category,
-        file: null,
-        videoUrl: normalizedVideoUrl,
-        onProgress: (progress) => {
-          setUploadProgress((current) => Math.max(current, Math.round(progress)));
-        },
-        onStageChange: (nextStage) => {
-          setUploadStage(nextStage);
-        },
+        fileId: preUpload.fileId,
+        bucketId: preUpload.bucketId!,
+        originalFileName: file.name,
+        onProgress: (pct) => setUploadProgress((curr) => Math.max(curr, pct)),
       });
-
       setUploadProgress(100);
       setStep(3);
       setLoading(false);
@@ -558,15 +513,23 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="school"
-                    value={formData.school}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入所在学校全称" 
-                  />
+                  <div className="relative">
+                    <select
+                      required
+                      name="school"
+                      value={formData.school}
+                      onChange={handleSelectChange}
+                      className="w-full appearance-none px-4 py-3 pr-12 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white text-zinc-900"
+                    >
+                      <option value="" disabled>请选择所在学校</option>
+                      {SCHOOL_OPTIONS.map((school) => (
+                        <option key={school.label} value={school.value}>
+                          {school.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
@@ -578,17 +541,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
                     placeholder="请输入学号" 
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-zinc-900">指导教师 <span className="text-zinc-400 font-normal text-xs">（可不填）</span></label>
-                  <input 
-                    type="text" 
-                    name="teacher"
-                    value={formData.teacher}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入指导教师姓名" 
                   />
                 </div>
               </div>
@@ -606,7 +558,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       className="sr-only" 
                     />
                     <span className="flex flex-col">
-                      <span className="block text-sm font-bold text-zinc-900">文创设计</span>
+                      <span className="block text-sm font-bold text-zinc-900">明信片设计</span>
                       <span className="mt-1 flex items-center text-xs text-zinc-500">图片格式 (JPG/PNG)</span>
                     </span>
                   </label>
@@ -634,8 +586,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       className="sr-only" 
                     />
                     <span className="flex flex-col">
-                      <span className="block text-sm font-bold text-zinc-900">项目视频</span>
-                      <span className="mt-1 flex items-center text-xs text-zinc-500">粘贴网盘分享链接</span>
+                      <span className="block text-sm font-bold text-zinc-900">项目视频 <span className="text-orange-500 font-normal text-xs">（暂时）</span></span>
+                      <span className="mt-1 flex items-center text-xs text-zinc-500">视频/压缩包文件上传</span>
                     </span>
                   </label>
                 </div>
@@ -644,64 +596,14 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
 
-                {/* Hint: fill name+phone first so the file gets the correct name in the bucket */}
-                {formData.category !== 'video' && (!formData.name.trim() || !formData.phone.trim()) && (
+                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
+                {(!formData.name.trim() || !formData.studentId.trim()) && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    {formData.category === 'postcard'
-                      ? <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称_序号 命名上传</>
-                      : <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称 命名上传</>
-                    }
+                    请先填写<strong>姓名</strong>和<strong>学号</strong>，文件将以「学号_姓名_类别」命名上传
                   </div>
                 )}
-                {formData.category === 'video' ? (
-                  // Video category: cloud drive link
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 overflow-hidden">
-                      <div className="px-4 py-3 bg-blue-100/60 border-b border-blue-200">
-                        <p className="text-sm font-bold text-blue-800">视频上传步骤</p>
-                      </div>
-                      <ol className="px-4 py-3 space-y-2.5 text-sm text-blue-800">
-                        <li className="flex gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">1</span>
-                          <span>将视频上传至<strong>百度云盘</strong>或<strong>夸克网盘</strong></span>
-                        </li>
-                        <li className="flex gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_介绍视频</strong></span>
-                        </li>
-                        <li className="flex gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
-                          <span>点击<strong>分享文件</strong>，有效时间设置为<strong>永久</strong>，<span className="text-red-600 font-semibold">不要设置提取密码</span></span>
-                        </li>
-                        <li className="flex gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">4</span>
-                          <span>将生成的<strong>分享链接</strong>粘贴到下方输入框</span>
-                        </li>
-                      </ol>
-                    </div>
-                    <input
-                      type="text"
-                      name="videoUrl"
-                      value={formData.videoUrl || ''}
-                      onChange={handleInputChange}
-                      placeholder="请粘贴网盘分享链接（无提取密码）"
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white"
-                    />
-                    {formData.videoUrl && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm font-medium"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>链接已粘贴</span>
-                      </motion.div>
-                    )}
-                  </div>
-                ) : (
-                  // Postcard & Presentation: file upload
-                  <div
+                <div
                     onClick={openFilePicker}
                     onDragEnter={(e) => {
                       e.preventDefault();
@@ -852,7 +754,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                       )}
                     </div>
                   </div>
-                )}
               </div>
 
               <div className="pt-6 border-t border-zinc-100 flex justify-end gap-4">
@@ -866,13 +767,15 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading')}
+                  disabled={loading || preUpload.status === 'uploading'}
                   className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
                   {loading
                     ? '提交中...'
-                    : formData.category !== 'video' && preUpload.status === 'uploading'
+                    : preUpload.status === 'uploading'
                     ? '文件上传中...'
+                    : formData.category === 'video'
+                    ? '上传视频（暂时）'
                     : '确认提交'}
                 </button>
               </div>
@@ -939,7 +842,7 @@ export default function App() {
 
       {/* Header */}
       <header className="relative z-10 flex justify-between items-center p-6 md:p-10">
-        <div className="text-base md:text-xl font-bold tracking-tight text-zinc-800 flex items-center gap-2">
+        <div className="text-sm md:text-base font-bold tracking-tight text-zinc-800 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-orange-500"></div>
           上海市民办高校新联会
         </div>
@@ -977,14 +880,11 @@ export default function App() {
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
-            非遗文化创新作品大赛
+            非遗主题文创产品设计及演示文稿演讲大赛
           </p>
-          <p className="text-sm sm:text-base text-zinc-400 mb-6 tracking-widest">
-            明信片、书签、冰箱贴、徽章、帆布袋等
+          <p className="text-sm sm:text-base text-zinc-400 mb-12 tracking-widest">
+            明信片 · 书签 · 冰筱贴 · 徽章 · 帆布袋
           </p>
-          <div className="inline-block mb-8 px-5 py-2 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-base font-bold tracking-widest">
-            新力量·新传承
-          </div>
 
           <motion.button 
             whileHover={{ scale: 1.05 }}
@@ -1003,17 +903,15 @@ export default function App() {
 
       {/* Footer */}
       <footer className="relative z-10 flex flex-col md:flex-row justify-between items-center md:items-end p-6 md:p-10 mt-auto text-xs md:text-sm text-zinc-400 gap-6 text-center md:text-left bg-gradient-to-t from-white/80 to-transparent pt-20">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="max-w-2xl space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">组织架构</p>
-          <p><span className="font-semibold text-zinc-500">指导单位：</span>上海市教委民办教育管理处（民办教育综合党委办公室）</p>
           <p><span className="font-semibold text-zinc-500">主办单位：</span>上海市民办高校新的社会阶层人士联谊会</p>
-          <p><span className="font-semibold text-zinc-500">承办单位：</span>新联会上海师范大学天华学院分会</p>
-          <p><span className="font-semibold text-zinc-500">协办单位：</span>新联会上海建桥学院分会、上海震旦职业学院分会、上海外国语大学贤达人文学院分会</p>
+          <p><span className="font-semibold text-zinc-500">承办单位：</span>上海震旦职业学院、上海外国语大学贤达经济人文学院、上海建桥学院、上海师范大学天华学院</p>
         </div>
         <div className="md:text-right space-y-2">
           <p className="font-bold text-zinc-800 text-sm md:text-base mb-2">活动时间</p>
-          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026 年 4 月 — 6 月</p>
-          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 31 日 24:00</span></p>
+          <p className="font-mono text-zinc-500 bg-zinc-100 px-3 py-1 rounded-md inline-block">2026.4.20 - 2026.5.24</p>
+          <p className="text-xs text-zinc-400 mt-1">作品提交截止：<span className="font-semibold text-orange-500">2026 年 5 月 24 日 24:00</span></p>
         </div>
       </footer>
 

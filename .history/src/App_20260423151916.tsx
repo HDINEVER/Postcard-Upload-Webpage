@@ -10,8 +10,6 @@ import gsap from 'gsap';
 import confetti from 'canvas-confetti';
 import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
-
-
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
   postcard: {
     accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
@@ -34,7 +32,8 @@ type FormState = {
   phone: string;
   school: string;
   studentId: string;
-  teacher: string;
+  teacher?: string;
+  teacherId?: string;
   category: CategoryKey;
   videoUrl?: string;
 };
@@ -167,6 +166,13 @@ const FloatingCards = () => {
   );
 };
 
+const SCHOOL_PRESETS = [
+  '上海震旦职业学院',
+  '上海外国语大学贤达人文学院',
+  '上海建桥学院',
+  '上海师范大学天华学院',
+];
+
 function SubmitModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
@@ -180,6 +186,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState<UploadStage>('uploading');
+  const [isCustomSchool, setIsCustomSchool] = useState(false);
   const [preUploadByCategory, setPreUploadByCategory] = useState<Record<CategoryKey, PreUploadState>>({
     postcard: { ...EMPTY_PRE_UPLOAD },
     presentation: { ...EMPTY_PRE_UPLOAD },
@@ -192,6 +199,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     school: '',
     studentId: '',
     teacher: '',
+    teacherId: '',
     category: 'postcard',
     videoUrl: '',
   });
@@ -260,11 +268,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     const nextValue =
       name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
     setFormData(prev => ({ ...prev, [name]: nextValue }));
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -423,6 +426,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
           phone: formData.phone,
           school: formData.school,
           studentId: formData.studentId,
+          teacher: formData.teacher,
+          teacherId: formData.teacherId,
           category: formData.category,
           fileId: preUpload.fileId,
           bucketId: preUpload.bucketId!,
@@ -456,6 +461,8 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         phone: formData.phone,
         school: formData.school,
         studentId: formData.studentId,
+        teacher: formData.teacher,
+        teacherId: formData.teacherId,
         category: formData.category,
         file: null,
         videoUrl: normalizedVideoUrl,
@@ -558,15 +565,41 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="school"
-                    value={formData.school}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入所在学校全称" 
-                  />
+                  <div className="relative">
+                    <select
+                      required
+                      value={isCustomSchool ? '__other__' : formData.school}
+                      onChange={(e) => {
+                        if (e.target.value === '__other__') {
+                          setIsCustomSchool(true);
+                          setFormData(prev => ({ ...prev, school: '' }));
+                        } else {
+                          setIsCustomSchool(false);
+                          setFormData(prev => ({ ...prev, school: e.target.value }));
+                        }
+                      }}
+                      className="w-full appearance-none px-4 py-3 pr-10 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white text-zinc-900"
+                    >
+                      <option value="" disabled>请选择所在学校</option>
+                      {SCHOOL_PRESETS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                      <option value="__other__">其他学校（手动输入）</option>
+                    </select>
+                    <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+                  </div>
+                  {isCustomSchool && (
+                    <input
+                      required
+                      type="text"
+                      name="school"
+                      value={formData.school}
+                      onChange={handleInputChange}
+                      autoFocus
+                      className="w-full px-4 py-3 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-white text-zinc-900"
+                      placeholder="请输入学校全称"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
@@ -580,15 +613,28 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     placeholder="请输入学号" 
                   />
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-zinc-900">指导教师 <span className="text-zinc-400 font-normal text-xs">（可不填）</span></label>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-zinc-900">指导教师姓名 <span className="font-normal text-zinc-400 text-xs">(可不填)</span></label>
                   <input 
                     type="text" 
                     name="teacher"
-                    value={formData.teacher}
+                    value={formData.teacher || ''}
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
                     placeholder="请输入指导教师姓名" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-zinc-900">指导教师工号 <span className="font-normal text-zinc-400 text-xs">(可不填)</span></label>
+                  <input 
+                    type="text" 
+                    name="teacherId"
+                    value={formData.teacherId || ''}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
+                    placeholder="请输入指导教师工号" 
                   />
                 </div>
               </div>
@@ -644,13 +690,13 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-zinc-900">作品上传</label>
 
-                {/* Hint: fill name+phone first so the file gets the correct name in the bucket */}
+                {/* Hint: fill name+studentId first so the file gets the correct name in the bucket */}
                 {formData.category !== 'video' && (!formData.name.trim() || !formData.phone.trim()) && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
                     {formData.category === 'postcard'
-                      ? <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称_序号 命名上传</>
-                      : <>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以 学校_参赛者姓名_作品名称 命名上传</>
+                      ? <span>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以「学校_参赛者姓名_作品名称_序号」命名上传</span>
+                      : <span>请先填写<strong>姓名</strong>和<strong>手机号</strong>，文件以「学校_参赛者姓名_作品名称」命名上传</span>
                     }
                   </div>
                 )}
@@ -668,7 +714,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_介绍视频</strong></span>
+                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_概括主题</strong></span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
@@ -939,7 +985,7 @@ export default function App() {
 
       {/* Header */}
       <header className="relative z-10 flex justify-between items-center p-6 md:p-10">
-        <div className="text-base md:text-xl font-bold tracking-tight text-zinc-800 flex items-center gap-2">
+        <div className="text-base md:text-lg font-bold tracking-tight text-zinc-800 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-orange-500"></div>
           上海市民办高校新联会
         </div>
@@ -976,15 +1022,15 @@ export default function App() {
             <span>文创</span>
           </h1>
           
-          <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">
+          <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-1 tracking-wide">
             非遗文化创新作品大赛
           </p>
-          <p className="text-sm sm:text-base text-zinc-400 mb-6 tracking-widest">
+          <p className="text-base sm:text-lg font-bold text-orange-500 mb-3 tracking-widest">
+            新力量·新传承
+          </p>
+          <p className="text-sm sm:text-base text-zinc-400 mb-12 tracking-widest">
             明信片、书签、冰箱贴、徽章、帆布袋等
           </p>
-          <div className="inline-block mb-8 px-5 py-2 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-base font-bold tracking-widest">
-            新力量·新传承
-          </div>
 
           <motion.button 
             whileHover={{ scale: 1.05 }}
