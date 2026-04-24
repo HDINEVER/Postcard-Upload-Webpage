@@ -29,6 +29,13 @@ const FILE_RULES: Record<string, { accept: string; label: string }> = {
 
 type CategoryKey = 'postcard' | 'presentation' | 'video';
 
+const PRESET_SCHOOLS = [
+  '上海师范大学天华学院',
+  '上海建桥学院',
+  '上海震旦职业学院',
+  '上海外国语大学贤达人文学院',
+] as const;
+
 type FormState = {
   name: string;
   phone: string;
@@ -186,10 +193,12 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     video: { ...EMPTY_PRE_UPLOAD },
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [schoolSelection, setSchoolSelection] = useState<string>(PRESET_SCHOOLS[0]);
+  const [customSchool, setCustomSchool] = useState('');
   const [formData, setFormData] = useState<FormState>({
     name: '',
     phone: '',
-    school: '',
+    school: PRESET_SCHOOLS[0],
     studentId: '',
     teacher: '',
     category: 'postcard',
@@ -423,6 +432,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
           phone: formData.phone,
           school: formData.school,
           studentId: formData.studentId,
+          teacher: formData.teacher,
           category: formData.category,
           fileId: preUpload.fileId,
           bucketId: preUpload.bucketId!,
@@ -456,6 +466,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
         phone: formData.phone,
         school: formData.school,
         studentId: formData.studentId,
+        teacher: formData.teacher,
         category: formData.category,
         file: null,
         videoUrl: normalizedVideoUrl,
@@ -558,15 +569,39 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">所在学校</label>
-                  <input 
-                    required 
-                    type="text" 
-                    name="school"
-                    value={formData.school}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white" 
-                    placeholder="请输入所在学校全称" 
-                  />
+                  <select
+                    required
+                    value={schoolSelection}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSchoolSelection(val);
+                      if (val !== '其他') {
+                        setFormData((prev) => ({ ...prev, school: val }));
+                        setCustomSchool('');
+                      } else {
+                        setFormData((prev) => ({ ...prev, school: '' }));
+                      }
+                    }}
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white"
+                  >
+                    {PRESET_SCHOOLS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="其他">其他</option>
+                  </select>
+                  {schoolSelection === '其他' && (
+                    <input
+                      required
+                      type="text"
+                      value={customSchool}
+                      onChange={(e) => {
+                        setCustomSchool(e.target.value);
+                        setFormData((prev) => ({ ...prev, school: e.target.value }));
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white mt-2"
+                      placeholder="请输入所在学校全称"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
@@ -960,12 +995,12 @@ export default function App() {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[160%] bg-white/90 blur-3xl rounded-full pointer-events-none -z-10"></div>
 
           <h1
-            className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap"
+            className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap lg:flex-nowrap"
             style={{ fontFamily: "'ZCOOL XiaoWei', serif" }}
           >
-            <span>新力量</span>
+            <span className="shrink-0 whitespace-nowrap">新力量</span>
             <span className="text-orange-500 font-serif italic font-light text-5xl sm:text-7xl md:text-8xl lg:text-[8rem]">&</span>
-            <span>新传承</span>
+            <span className="shrink-0 whitespace-nowrap">新传承</span>
           </h1>
           
           <p className="text-lg sm:text-xl md:text-2xl font-medium text-zinc-500 mb-3 tracking-wide">

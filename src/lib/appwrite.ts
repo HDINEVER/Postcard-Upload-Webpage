@@ -297,7 +297,7 @@ function normalizeSubmissionError(error: unknown): Error {
     const appwriteError = error as { message: string; code?: number; type?: string };
 
     if (appwriteError.type === 'document_invalid_structure') {
-      if (appwriteError.message.includes('schoolName')) {
+      if (appwriteError.message.includes('SchoolName')) {
         return new Error('提交失败：所选学校与 Appwrite 集合允许值不一致，请重新选择学校后再试。');
       }
 
@@ -401,6 +401,7 @@ export async function finalizeFileSubmission({
   phone,
   school,
   studentId,
+  teacher,
   category,
   fileId,
   bucketId,
@@ -411,6 +412,7 @@ export async function finalizeFileSubmission({
   phone: string;
   school: string;
   studentId: string;
+  teacher?: string;
   category: string;
   fileId: string;
   bucketId: string;
@@ -437,8 +439,9 @@ export async function finalizeFileSubmission({
       {
         name,
         tel: phone,
-        schoolName: school,
+        SchoolName: school,
         schoolNum: studentId,
+        TeacherId: teacher || '',
         videoUrl: '', // required field on the collection; empty string for file submissions
       },
     );
@@ -457,6 +460,7 @@ export async function submitEntry({
   phone,
   school,
   studentId,
+  teacher,
   category,
   file,
   videoUrl,
@@ -467,6 +471,7 @@ export async function submitEntry({
   phone: string;
   school: string;
   studentId: string;
+  teacher?: string;
   category: string;
   file: File | null;
   videoUrl?: string;
@@ -501,8 +506,9 @@ export async function submitEntry({
         {
           name,
           tel: phone,
-          schoolName: school,
+          SchoolName: school,
           schoolNum: studentId,
+          TeacherId: teacher || '',
           videoUrl: normalizedVideoUrl,
         }
       );
