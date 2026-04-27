@@ -33,7 +33,22 @@ const PRESET_SCHOOLS = [
   '上海师范大学天华学院',
   '上海建桥学院',
   '上海震旦职业学院',
-  '上海外国语大学贤达人文学院',
+  '上海外国语大学贤达经济人文学院',
+  '上海杉达学院',
+  '上海视觉艺术学院',
+  '上海立达学院',
+  '上海兴伟学院',
+  '上海中侨职业技术大学',
+  '上海东海职业技术学院',
+  '上海工商职业技术学院',
+  '上海济光职业技术学院',
+  '上海民远职业技术学院',
+  '上海思博职业技术学院',
+  '上海工商外国语职业学院',
+  '上海邦德职业技术学院',
+  '上海电影艺术职业学院',
+  '上海欧华职业技术学院',
+  '上海中华职业技术学院',
 ] as const;
 
 type FormState = {
@@ -194,7 +209,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [schoolSelection, setSchoolSelection] = useState<string>(PRESET_SCHOOLS[0]);
-  const [customSchool, setCustomSchool] = useState('');
   const [formData, setFormData] = useState<FormState>({
     name: '',
     phone: '',
@@ -575,33 +589,14 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     onChange={(e) => {
                       const val = e.target.value;
                       setSchoolSelection(val);
-                      if (val !== '其他') {
-                        setFormData((prev) => ({ ...prev, school: val }));
-                        setCustomSchool('');
-                      } else {
-                        setFormData((prev) => ({ ...prev, school: '' }));
-                      }
+                      setFormData((prev) => ({ ...prev, school: val }));
                     }}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white"
                   >
                     {PRESET_SCHOOLS.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
-                    <option value="其他">其他</option>
                   </select>
-                  {schoolSelection === '其他' && (
-                    <input
-                      required
-                      type="text"
-                      value={customSchool}
-                      onChange={(e) => {
-                        setCustomSchool(e.target.value);
-                        setFormData((prev) => ({ ...prev, school: e.target.value }));
-                      }}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white mt-2"
-                      placeholder="请输入所在学校全称"
-                    />
-                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-zinc-900">学号</label>
