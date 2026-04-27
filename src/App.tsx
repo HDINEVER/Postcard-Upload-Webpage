@@ -994,6 +994,10 @@ export default function App() {
           {/* Protective glow to ensure text readability against floating cards */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[160%] bg-white/90 blur-3xl rounded-full pointer-events-none -z-10"></div>
 
+          <p className="text-sm sm:text-base md:text-lg font-semibold text-zinc-500 mb-4 tracking-[0.5em] uppercase">
+            非遗&文创
+          </p>
+
           <h1
             className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] tracking-tight mb-6 text-zinc-900 flex flex-row items-center justify-center gap-4 sm:gap-8 drop-shadow-sm flex-wrap lg:flex-nowrap"
             style={{ fontFamily: "'ZCOOL XiaoWei', serif" }}
