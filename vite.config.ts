@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/v1': {
-        target: 'https://appwrite1.hdinever.top',
+        target: 'https://appwrite1.hdinever.ccwu.cc',
         changeOrigin: true,
         secure: true,
         timeout: 600000,

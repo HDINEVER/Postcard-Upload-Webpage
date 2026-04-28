@@ -3,7 +3,7 @@ import { Client, Databases, Storage, ID } from 'appwrite';
 const configuredEndpoint = (
   import.meta.env.VITE_APPWRITE_URL ||
   import.meta.env.VITE_APPWRITE_ENDPOINT ||
-  'https://appwrite1.hdinever.top/v1'
+  'https://appwrite1.hdinever.ccwu.cc/v1'
 ).trim();
 
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -92,6 +92,64 @@ const APPWRITE_SDK_HEADERS: Record<string, string> = {
   'X-Appwrite-Response-Format': '1.9.0',
 };
 
+// Turnstile sitekey — set VITE_TURNSTILE_SITEKEY in .env
+const TURNSTILE_SITEKEY = (import.meta.env.VITE_TURNSTILE_SITEKEY || '').trim();
+
+// Cache the token; Turnstile tokens are valid for ~5 min.
+let _turnstileToken: string | null = null;
+let _turnstileExpiry = 0;
+
+export async function getTurnstileToken(): Promise<string | null> {
+  if (!TURNSTILE_SITEKEY) return null;
+  if (_turnstileToken && Date.now() < _turnstileExpiry) return _turnstileToken;
+
+  return new Promise((resolve) => {
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.opacity = '0';
+    document.body.appendChild(container);
+
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (container.parentNode) document.body.removeChild(container);
+        resolve(null);
+      }
+    }, 4000); // 4秒超时，防止阻塞上传
+
+    if (typeof window !== 'undefined' && (window as any).turnstile) {
+       (window as any).turnstile.render(container, {
+        sitekey: TURNSTILE_SITEKEY,
+        callback: (token: string) => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeout);
+          _turnstileToken = token;
+          _turnstileExpiry = Date.now() + 4 * 60 * 1000;
+          document.body.removeChild(container);
+          resolve(token);
+        },
+        'error-callback': () => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeout);
+          document.body.removeChild(container);
+          resolve(null);
+        },
+        execution: 'execute',
+        appearance: 'always', // 始终渲染，但容器是隐藏的
+      });
+    } else {
+      resolved = true;
+      clearTimeout(timeout);
+      resolve(null);
+    }
+  });
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -125,6 +183,21 @@ async function fetchChunkWithRetry(
       }
 
       const body = await response.text().catch(() => '');
+
+      // Cloudflare challenge page — retrying makes it worse; surface immediately.
+      const isCloudflareChallenge =
+        body.includes('just a moment') ||
+        body.includes('Just a moment') ||
+        body.includes('challenges.cloudflare.com') ||
+        (response.status === 403 && body.startsWith('<!DOCTYPE html'));
+      if (isCloudflareChallenge) {
+        throw {
+          message: 'Cloudflare 拦截了上传请求（Bot Protection 触发）。请在 Cloudflare 控制台 Security → WAF 中为 /v1/* 路径创建 Skip Bot Fight Mode 规则，或临时将该 API 域名的安全级别调低。',
+          code: 403,
+          type: 'cloudflare_challenge',
+        };
+      }
+
       let parsedMessage = body;
       try {
         const json = JSON.parse(body);
@@ -188,19 +261,13 @@ async function fetchChunkWithRetry(
   throw new Error(`分块上传失败: ${start}-${end - 1}/${totalSize}`);
 }
 
-/**
- * Upload a file to an Appwrite storage bucket using small chunks.
- * Falls back to a single-request upload for files at or below UPLOAD_CHUNK_SIZE.
- * Uses the Appwrite REST API directly (Content-Range + X-Appwrite-ID) so we control chunk size
- * independently of the SDK's hardcoded 5 MB threshold.
- * @param displayFileName Optional: custom filename to use in storage (defaults to original file.name)
- */
 async function uploadFileChunked(
   bucketId: string,
   fileId: string,
   file: File,
   onProgress?: (pct: number) => void,
   displayFileName?: string,
+  providedTurnstileToken?: string,
 ): Promise<Record<string, unknown>> {
   const endpoint = appwriteConfig.endpoint;
   const projectId = appwriteConfig.projectId;
@@ -212,13 +279,13 @@ async function uploadFileChunked(
     throw new Error('文件大小为 0，请重新选择文件');
   }
 
-  // Shared base headers — always sent, matches Appwrite Web SDK v24.1.1
+  const turnstileToken = providedTurnstileToken || (await getTurnstileToken());
   const baseHeaders: Record<string, string> = {
     ...APPWRITE_SDK_HEADERS,
     'X-Appwrite-Project': projectId,
+    ...(turnstileToken ? { 'X-Turnstile-Token': turnstileToken } : {}),
   };
 
-  // Small file — single request, no Content-Range needed
   if (totalSize <= UPLOAD_CHUNK_SIZE) {
     const form = new FormData();
     form.append('fileId', fileId);
@@ -235,10 +302,6 @@ async function uploadFileChunked(
     return res.json() as Promise<Record<string, unknown>>;
   }
 
-  // Multi-chunk upload.
-  // Following the SDK pattern exactly:
-  //   - First chunk: send fileId in the form body, no x-appwrite-id header
-  //   - After first response: extract $id and include x-appwrite-id for every subsequent chunk
   let fileObj: Record<string, unknown> | null = null;
   let uploadedFileId: string | null = null;
 
@@ -250,9 +313,6 @@ async function uploadFileChunked(
     form.append('fileId', fileId);
     form.append('file', new File([chunk], fileName, { type: file.type || 'application/octet-stream' }));
 
-    // content-range (lowercase) matches the SDK's exact header name.
-    // x-appwrite-id is only added for chunks after the first, using the $id
-    // returned by the server — this is the authoritative session identifier.
     const headers: Record<string, string> = {
       ...baseHeaders,
       'content-range': `bytes ${start}-${end - 1}/${totalSize}`,
@@ -265,8 +325,6 @@ async function uploadFileChunked(
     onProgress?.(Math.round((end / totalSize) * 100));
 
     const chunkData = await res.json().catch(() => null) as Record<string, unknown> | null;
-    // After the first successful chunk the server returns the canonical $id;
-    // capture it immediately so every subsequent chunk carries x-appwrite-id.
     if (chunkData && typeof chunkData['$id'] === 'string') {
       uploadedFileId = chunkData['$id'] as string;
     }
@@ -282,7 +340,7 @@ async function uploadFileChunked(
 function assertAppwriteConfigured() {
   if (!isAppwriteConfigured || !databases || !storage) {
     throw new Error(
-      `Appwrite 未配置完整，请在 .env 中补齐以下变量: ${missingEnvKeys.join(', ')}`
+      `Appwrite 未配置完整，请在 .env 中补齐以下变量: appwrite1.hdinever.ccwu.cc`
     );
   }
 }
@@ -300,47 +358,31 @@ function normalizeSubmissionError(error: unknown): Error {
       if (appwriteError.message.includes('SchoolName')) {
         return new Error('提交失败：所选学校与 Appwrite 集合允许值不一致，请重新选择学校后再试。');
       }
-
       return new Error(`提交失败：${appwriteError.message}`);
     }
 
     if (appwriteError.code === 404 && appwriteError.type === 'general_route_not_found') {
-      return new Error('提交失败：Appwrite 文档接口未找到，请检查 Database ID、Collection ID 以及当前接口路径是否与服务端版本一致。');
+      return new Error('提交失败：Appwrite 文档接口未找到。');
     }
 
-    if (appwriteError.code === 401) {
-      return new Error(`文件上传被拒绝 (401)：存储桶未授权当前用户上传，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
+    if (appwriteError.type === 'cloudflare_challenge') {
+      return new Error(appwriteError.message);
     }
 
-    if (appwriteError.code === 403) {
-      return new Error(`文件上传被拒绝 (403)：存储桶权限不足，请在 Appwrite 控制台→Storage→对应 Bucket→Permissions 中为 "Any" 添加 create 权限。服务端原始信息：${appwriteError.message}`);
-    }
-
-    if (appwriteError.code === 500) {
-      return new Error(
-        `文件上传服务器内部错误 (500)：${appwriteError.message || '未知错误'}。` +
-        `请检查：① Appwrite Storage 磁盘/对象存储是否正常；② 存储桶是否设置了文件类型白名单（不包含当前文件扩展名）；③ 存储桶最大文件大小限制。Appwrite 类型：${appwriteError.type || '未知'}`
-      );
+    if (appwriteError.code === 401 || appwriteError.code === 403) {
+      return new Error(`文件上传被拒绝 (${appwriteError.code})：存储桶权限不足，请在 Appwrite 控制台检查。`);
     }
 
     if (appwriteError.code === 499 || appwriteError.message.includes('Client Closed Request')) {
-      return new Error(
-        '上传超时：文件分块上传时服务器关闭了连接。请尝试上传较小的文件（建议不超过 50 MB），或联系管理员检查 Cloudflare 代理超时与上传带宽配置。'
-      );
+      return new Error('上传超时：服务器关闭了连接，请重试或上传较小的文件。');
     }
-  }
-
-  if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-    return new Error(
-      '无法连接到 Appwrite 接口。请先检查 1) Appwrite 域名是否可直接访问 /v1/health，2) 是否被 Cloudflare Access、WAF 或登录保护拦截，3) Appwrite Platforms/CORS 是否已放行当前域名。浏览器直连 Appwrite 不需要 API Key。'
-    );
   }
 
   if (error instanceof Error) {
     return error;
   }
 
-  return new Error('提交失败，请检查 Appwrite 配置与网络连通性');
+  return new Error('提交失败，请检查网络连通性');
 }
 
 function sanitizeFileNamePart(value: string): string {
@@ -351,26 +393,19 @@ function sanitizeFileNamePart(value: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
-/**
- * Upload a file to the appropriate bucket immediately when selected (pre-upload pattern).
- * Call this as soon as the user picks a file so the upload runs while they fill the form.
- * Returns { fileId, bucketId } on success for later reference.
- */
 export async function startFileUpload(
   category: string,
   file: File,
   onProgress?: (pct: number) => void,
   name?: string,
   studentId?: string,
+  turnstileToken?: string,
 ): Promise<{ fileId: string; bucketId: string; displayFileName: string }> {
   try {
     assertAppwriteConfigured();
     const selectedBucketId = categoryToBucketId[category];
     if (!selectedBucketId) {
-      throw new Error('参赛类别无效，请重新选择');
-    }
-    if (file.size === 0) {
-      throw new Error('文件大小为 0，请重新选择文件');
+      throw new Error('参赛类别无效');
     }
     const fileId = ID.unique();
     const fileExtension = file.name.split('.').pop() || 'bin';
@@ -382,20 +417,13 @@ export async function startFileUpload(
     } else {
       displayFileName = file.name;
     }
-    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, displayFileName);
-    console.info('[Appwrite] Pre-upload complete:', { fileId, displayFileName });
+    await uploadFileChunked(selectedBucketId, fileId, file, onProgress, displayFileName, turnstileToken);
     return { fileId, bucketId: selectedBucketId, displayFileName };
   } catch (error) {
     throw normalizeSubmissionError(error);
   }
 }
 
-/**
- * Called at form-submit time (after pre-upload) when we finally have name + studentId.
- * 1. Renames the already-uploaded file to `{studentId}_{name}_{category}.{ext}`.
- * 2. Creates a DB document using the same ID as the storage file — so the DB row's
- *    `$id` always matches the bucket file's `$id`, enabling one-click correlation on export.
- */
 export async function finalizeFileSubmission({
   name,
   phone,
@@ -421,32 +449,20 @@ export async function finalizeFileSubmission({
 }) {
   try {
     assertAppwriteConfigured();
-
-    const fileExtension = originalFileName.split('.').pop() || 'bin';
-    const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
-    const safeName = sanitizeFileNamePart(name) || 'anonymous';
-    const displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
-
     onProgress?.(50);
-
-    // Create DB document with the same ID as the file so they are permanently linked.
-    // (Rename via storage.updateFile is skipped: guest users only have create permission,
-    //  not update — the file is already named correctly at upload time via startFileUpload.)
     const entry = await databases!.createDocument(
       config.databaseId,
       config.collectionId,
-      fileId, // use fileId as document ID for 1:1 linkage
+      fileId,
       {
         name,
         tel: phone,
         SchoolName: school,
         schoolNum: studentId,
         TeacherId: teacher || '',
-        videoUrl: '', // required field on the collection; empty string for file submissions
+        videoUrl: '',
       },
     );
-
-    console.info('[Appwrite] DB record created:', { entryId: entry.$id, fileId, displayFileName });
     onProgress?.(100);
     return { success: true, entry };
   } catch (error) {
@@ -454,7 +470,6 @@ export async function finalizeFileSubmission({
   }
 }
 
-// Helper function to upload submission
 export async function submitEntry({
   name,
   phone,
@@ -462,7 +477,6 @@ export async function submitEntry({
   studentId,
   teacher,
   category,
-  file,
   videoUrl,
   onProgress,
   onStageChange,
@@ -482,23 +496,9 @@ export async function submitEntry({
     assertAppwriteConfigured();
     const entryId = ID.unique();
 
-    // For video category, skip file upload and go straight to saving link
     if (category === 'video') {
       onStageChange?.('saving');
       onProgress?.(50);
-
-      if (!videoUrl || videoUrl.trim() === '') {
-        throw new Error('视频网盘链接不能为空');
-      }
-
-      const normalizedVideoUrl = videoUrl.trim();
-
-      console.info('[Appwrite] Saving video link:', {
-        rawVideoUrl: videoUrl,
-        normalizedVideoUrl,
-      });
-
-      // Create database entry with video link
       const entry = await databases!.createDocument(
         config.databaseId,
         config.collectionId,
@@ -509,80 +509,18 @@ export async function submitEntry({
           SchoolName: school,
           schoolNum: studentId,
           TeacherId: teacher || '',
-          videoUrl: normalizedVideoUrl,
+          videoUrl: videoUrl || '',
         }
       );
-
-      console.info('[Appwrite] Video entry created:', {
-        entryId: entry.$id,
-      });
-
       onProgress?.(100);
-      return { success: true, entry, file: null, bucketId: null, school };
+      return { success: true, entry };
     }
-
-    // For file-based categories (postcard, presentation)
-    if (!file) {
-      throw new Error('文件不能为空');
-    }
-
-    const selectedBucketId = categoryToBucketId[category];
-    if (!selectedBucketId) {
-      throw new Error('参赛类别无效，请重新选择');
-    }
-
-    // Generate standardized filename for uploader traceability.
-    const fileExtension = file.name.split('.').pop() || 'bin';
-    const safeStudentId = sanitizeFileNamePart(studentId) || 'unknown';
-    const safeName = sanitizeFileNamePart(name) || 'anonymous';
-    const displayFileName = `${safeStudentId}_${safeName}_${category}.${fileExtension}`;
-
-    console.info('[Appwrite] Upload start:', {
-      category,
-      selectedBucketId,
-      endpoint: appwriteConfig.endpoint,
-      origin: browserOrigin || 'unknown',
-      originalFileName: file.name,
-      displayFileName,
-      fileType: file.type || 'unknown',
-      fileSize: file.size,
-    });
-
-    // Use the same ID for both storage file and database row so they can be linked reliably.
-    const fileId = entryId;
-    onStageChange?.('uploading');
-    const uploadedFile = await uploadFileChunked(
-      selectedBucketId,
-      fileId,
-      file,
-      (pct) => onProgress?.(pct),
-      displayFileName,
-    );
-
-    onStageChange?.('saving');
-    onProgress?.(95);
-
-    console.info('[Appwrite] File upload complete:', {
-      uploadedFile,
-      fileId: (uploadedFile as any)?.$id,
-      displayFileName,
-    });
-
-    // For postcard/presentation, finish after successful bucket upload.
-    return { success: true, entry: null, file: uploadedFile, bucketId: selectedBucketId, school };
+    return { success: false };
   } catch (error) {
-    const normalizedError = normalizeSubmissionError(error);
-    console.error('Submission error:', normalizedError);
-    throw normalizedError;
+    throw normalizeSubmissionError(error);
   }
 }
 
-// Helper function to get file download URL
 export function getFileDownloadUrl(fileId: string, bucketId: string): string {
-  if (!isAppwriteConfigured) {
-    throw new Error(
-      `Appwrite 未配置完整，请在 .env 中补齐以下变量: ${missingEnvKeys.join(', ')}`
-    );
-  }
   return `${configuredEndpoint}/storage/buckets/${bucketId}/files/${fileId}/download`;
 }

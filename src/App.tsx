@@ -10,8 +10,6 @@ import gsap from 'gsap';
 import confetti from 'canvas-confetti';
 import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appwrite';
 
-
-
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
   postcard: {
     accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
@@ -347,14 +345,15 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     setFilesByCategory((prev) => ({ ...prev, [formData.category]: selectedFile }));
 
     // Immediately start uploading while the user fills the rest of the form.
-    // Pass name+studentId if already filled so the file is stored with the correct name.
     const category = formData.category;
     const currentName = formData.name.trim();
     const currentStudentId = formData.studentId.trim();
+    
     setPreUploadByCategory((prev) => ({
       ...prev,
       [category]: { status: 'uploading', progress: 0, fileId: null, bucketId: null, error: null },
     }));
+
     startFileUpload(
       category,
       selectedFile,
@@ -364,7 +363,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
           [category]: { ...prev[category], progress: pct },
         })),
       currentName || undefined,
-      currentStudentId || undefined,
+      currentStudentId || undefined
     )
       .then(({ fileId, bucketId }) => {
         setPreUploadByCategory((prev) => ({
@@ -852,32 +851,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                               </button>
                             </motion.div>
                           )}
-                          {(preUpload.status === 'idle') && (
-                            <motion.div
-                              key="idle"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-white border border-orange-200 text-orange-700 text-sm font-medium shadow-sm"
-                            >
-                              <span className="truncate max-w-[200px]">{file.name}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setFile(null);
-                                  setFilesByCategory((prev) => ({ ...prev, [formData.category]: null }));
-                                  setPreUploadByCategory((prev) => ({ ...prev, [formData.category]: { ...EMPTY_PRE_UPLOAD } }));
-                                  if (fileInputRef.current) {
-                                    fileInputRef.current.value = '';
-                                  }
-                                }}
-                                className="ml-2 text-orange-400 hover:text-orange-600"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </motion.div>
-                          )}
                         </AnimatePresence>
                       )}
                     </div>
@@ -896,7 +869,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading')}
+                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading') || (formData.category !== 'video' && !!file && preUpload.status !== 'done')}
                   className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
                   {loading
