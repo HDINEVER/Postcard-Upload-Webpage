@@ -12,12 +12,12 @@ import { submitEntry, startFileUpload, finalizeFileSubmission } from './lib/appw
 
 const FILE_RULES: Record<string, { accept: string; label: string }> = {
   postcard: {
-    accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
-    label: '支持 JPG、PNG 图片文件',
+    accept: '.jpg,.jpeg,.png,.zip,image/jpeg,image/png,application/zip,application/x-zip-compressed',
+    label: '支持 JPG、PNG 图片文件，多个设计文件可打包为 ZIP',
   },
   presentation: {
-    accept: '.ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    label: '支持 PPT、PPTX、PDF 文档文件',
+    accept: '.ppt,.pptx,.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    label: '支持 PPT、PPTX、PDF 文档文件，也允许 ZIP',
   },
   video: {
     accept: '',
@@ -57,6 +57,7 @@ type FormState = {
   teacher: string;
   category: CategoryKey;
   videoUrl?: string;
+  useCloudDrive: boolean;
 };
 
 type UploadStage = 'uploading' | 'saving';
@@ -215,6 +216,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
     teacher: '',
     category: 'postcard',
     videoUrl: '',
+    useCloudDrive: false,
   });
 
   useEffect(() => {
@@ -277,10 +279,10 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
   }, [loading, step, uploadStage]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     const nextValue =
       name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
-    setFormData(prev => ({ ...prev, [name]: nextValue }));
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : nextValue }));
   };
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -290,11 +292,10 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextCategory = e.target.value as CategoryKey;
-    setFormData(prev => ({ 
-      ...prev, 
+    setFormData(prev => ({
+      ...prev,
       category: nextCategory,
-      // Clear videoUrl when switching away from video category
-      videoUrl: nextCategory === 'video' ? prev.videoUrl : '',
+      videoUrl: nextCategory === 'video' || prev.useCloudDrive ? prev.videoUrl : '',
     }));
     setFile(filesByCategory[nextCategory]);
     setError(null);
@@ -306,6 +307,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
 
   const currentFileRule = FILE_RULES[formData.category] ?? FILE_RULES.postcard;
   const preUpload = preUploadByCategory[formData.category];
+  const usesCloudDrive = formData.category === 'video' || formData.useCloudDrive;
 
   const isFileAccepted = (selectedFile: File) => {
     const acceptedItems = currentFileRule.accept
@@ -410,15 +412,13 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    if (formData.category === 'video') {
+    if (usesCloudDrive) {
       if (!formData.videoUrl || formData.videoUrl.trim() === '') {
         setError('请粘贴网盘链接');
         return;
       }
 
       normalizedVideoUrl = formData.videoUrl.trim();
-
-      console.log('[Submit] Video category - extractedUrl:', normalizedVideoUrl);
     } else {
       if (!file) {
         setError('请选择文件');
@@ -466,7 +466,7 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    // Video category: save the link to the database (file categories returned early above)
+    // Cloud-drive submissions: save the link to the database (direct file uploads returned early above)
     setError(null);
     setLoading(true);
     setUploadStage('saving');
@@ -683,38 +683,66 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     }
                   </div>
                 )}
-                {formData.category === 'video' ? (
-                  // Video category: cloud drive link
+                <div className="rounded-xl border border-blue-200 bg-blue-50 overflow-hidden">
+                  <div className="px-4 py-3 bg-blue-100/60 border-b border-blue-200">
+                    <p className="text-sm font-bold text-blue-800">温馨提示</p>
+                  </div>
+                  <div className="px-4 py-3 space-y-2 text-sm leading-6 text-blue-800">
+                    <p>由于报名人数较多，为避免上传失败，超过 50MB 的大文件（视频 / PPT 等）请优先通过网盘统一提交，视频文件、PPT 或图片可放在同一个网盘链接内。</p>
+                    <p><strong>规范命名：</strong>请确保所有文件按要求命名。</p>
+                    <p><strong>打包上传：</strong>多个设计文件请压缩为 ZIP 包。</p>
+                    <p><strong>云盘链接：</strong>请在相应栏目准确填写网盘链接及提取码。</p>
+                    <p><strong>提交确认：</strong>请确保看到烟花特效后才算提交成功。</p>
+                  </div>
+                </div>
+
+                {formData.category !== 'video' && (
+                  <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700 cursor-pointer hover:border-orange-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="useCloudDrive"
+                      checked={formData.useCloudDrive}
+                      onChange={handleInputChange}
+                      className="mt-1 h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span>
+                      选择网盘统一上传（如果这样操作，在图片和 PPT 上传区域打勾后填写下方网盘链接）
+                    </span>
+                  </label>
+                )}
+
+                {usesCloudDrive ? (
                   <div className="space-y-3">
                     <div className="rounded-xl border border-blue-200 bg-blue-50 overflow-hidden">
                       <div className="px-4 py-3 bg-blue-100/60 border-b border-blue-200">
-                        <p className="text-sm font-bold text-blue-800">视频上传步骤</p>
+                        <p className="text-sm font-bold text-blue-800">网盘上传步骤</p>
                       </div>
                       <ol className="px-4 py-3 space-y-2.5 text-sm text-blue-800">
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">1</span>
-                          <span>将视频上传至<strong>百度云盘</strong>或<strong>夸克网盘</strong></span>
+                          <span>将文件上传至<strong>百度云盘</strong>或<strong>夸克网盘</strong></span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                          <span>将文件名命名为：<strong className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">学校_参赛者姓名_介绍视频</strong></span>
+                          <span>按报名要求重新命名文件；多个设计文件请打包为 <strong>ZIP</strong></span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
-                          <span>点击<strong>分享文件</strong>，有效时间设置为<strong>永久</strong>，<span className="text-red-600 font-semibold">不要设置提取密码</span></span>
+                          <span>点击<strong>分享文件</strong>，有效时间建议设置为<strong>永久</strong>，如有提取码请一并填写</span>
                         </li>
                         <li className="flex gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">4</span>
-                          <span>将生成的<strong>分享链接</strong>粘贴到下方输入框</span>
+                          <span>将生成的<strong>分享链接及提取码</strong>粘贴到下方输入框</span>
                         </li>
                       </ol>
                     </div>
                     <input
                       type="text"
                       name="videoUrl"
+                      required={usesCloudDrive}
                       value={formData.videoUrl || ''}
                       onChange={handleInputChange}
-                      placeholder="请粘贴网盘分享链接（无提取密码）"
+                      placeholder="请粘贴网盘分享链接及提取码"
                       className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-zinc-50 focus:bg-white"
                     />
                     {formData.videoUrl && (
@@ -729,7 +757,6 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                     )}
                   </div>
                 ) : (
-                  // Postcard & Presentation: file upload
                   <div
                     onClick={openFilePicker}
                     onDragEnter={(e) => {
@@ -869,12 +896,12 @@ function SubmitModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.category !== 'video' && preUpload.status === 'uploading') || (formData.category !== 'video' && !!file && preUpload.status !== 'done')}
+                  disabled={loading || (!usesCloudDrive && preUpload.status === 'uploading') || (!usesCloudDrive && !!file && preUpload.status !== 'done')}
                   className="px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
                   {loading
                     ? '提交中...'
-                    : formData.category !== 'video' && preUpload.status === 'uploading'
+                    : !usesCloudDrive && preUpload.status === 'uploading'
                     ? '文件上传中...'
                     : '确认提交'}
                 </button>

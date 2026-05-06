@@ -296,7 +296,20 @@ async function uploadFileChunked(
       body: form,
     });
     if (!res.ok) {
-      throw await res.json().catch(() => ({ message: res.statusText, code: res.status }));
+      const errorBody = await res.text().catch(() => '');
+      console.error('[Appwrite] Upload failed', {
+        status: res.status,
+        statusText: res.statusText,
+        body: errorBody,
+        fileName,
+        fileType: file.type,
+        size: totalSize,
+      });
+      try {
+        throw JSON.parse(errorBody);
+      } catch {
+        throw { message: errorBody || res.statusText, code: res.status };
+      }
     }
     onProgress?.(100);
     return res.json() as Promise<Record<string, unknown>>;
@@ -496,26 +509,23 @@ export async function submitEntry({
     assertAppwriteConfigured();
     const entryId = ID.unique();
 
-    if (category === 'video') {
-      onStageChange?.('saving');
-      onProgress?.(50);
-      const entry = await databases!.createDocument(
-        config.databaseId,
-        config.collectionId,
-        entryId,
-        {
-          name,
-          tel: phone,
-          SchoolName: school,
-          schoolNum: studentId,
-          TeacherId: teacher || '',
-          videoUrl: videoUrl || '',
-        }
-      );
-      onProgress?.(100);
-      return { success: true, entry };
-    }
-    return { success: false };
+    onStageChange?.('saving');
+    onProgress?.(50);
+    const entry = await databases!.createDocument(
+      config.databaseId,
+      config.collectionId,
+      entryId,
+      {
+        name,
+        tel: phone,
+        SchoolName: school,
+        schoolNum: studentId,
+        TeacherId: teacher || '',
+        videoUrl: videoUrl || '',
+      }
+    );
+    onProgress?.(100);
+    return { success: true, entry };
   } catch (error) {
     throw normalizeSubmissionError(error);
   }
