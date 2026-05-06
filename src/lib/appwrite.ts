@@ -73,10 +73,8 @@ const categoryToBucketId: Record<string, string> = {
   postcard: appwriteConfig.bucketIds.postcard,
 };
 
-// 2 MB per chunk — balances speed (~8 requests for 15 MB) and reliability:
-// each chunk at 2 Mbps takes ~8 s, well under Cloudflare's 100 s proxy timeout.
-// (500 KB = 30 requests; 5 MB = 3 requests but triggers CF 499 on slow connections)
-const UPLOAD_CHUNK_SIZE = 2 * 1024 * 1024;
+// 5 MB per chunk reduces request count for larger uploads while staying within Appwrite's chunked upload flow.
+const UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
 const CHUNK_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_CHUNK_RETRIES = 4;
 const BASE_RETRY_DELAY_MS = 1_500;
