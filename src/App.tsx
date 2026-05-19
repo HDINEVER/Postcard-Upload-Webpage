@@ -47,6 +47,7 @@ const PRESET_SCHOOLS = [
   '上海电影艺术职业学院',
   '上海欧华职业技术学院',
   '上海中华职业技术学院',
+  '上海工艺美术职业学院',
 ] as const;
 
 type FormState = {

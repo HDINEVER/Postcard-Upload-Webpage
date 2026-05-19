@@ -1,3 +1,18 @@
+---promptzy---
+# METADATA (do not edit above or below the delimiters)
+title: "API_KEY_CHECKLIST"
+collections: ["Postcard-Upload-Webpage"]
+tags: []
+variables: []
+created: "2026-05-13"
+updated: "2026-05-13"
+favorite: false
+rating: 0
+uses: 0
+version: 1
+versions: []
+---promptzy---
+
 # Appwrite 接入检查清单
 
 ## 必需的配置

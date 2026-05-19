@@ -1,3 +1,18 @@
+---promptzy---
+# METADATA (do not edit above or below the delimiters)
+title: "APPWRITE_SETUP"
+collections: ["Postcard-Upload-Webpage"]
+tags: []
+variables: []
+created: "2026-05-13"
+updated: "2026-05-13"
+favorite: false
+rating: 0
+uses: 0
+version: 1
+versions: []
+---promptzy---
+
 # Appwrite 后端集成指南
 
 ## 概述

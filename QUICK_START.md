@@ -1,3 +1,18 @@
+---promptzy---
+# METADATA (do not edit above or below the delimiters)
+title: "QUICK_START"
+collections: ["Postcard-Upload-Webpage"]
+tags: []
+variables: []
+created: "2026-05-13"
+updated: "2026-05-13"
+favorite: false
+rating: 0
+uses: 0
+version: 1
+versions: []
+---promptzy---
+
 # 📚 Appwrite 集成快速开始指南
 
 ## 🎯 概述
